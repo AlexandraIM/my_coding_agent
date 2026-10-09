@@ -1,5 +1,28 @@
 defmodule Ella do
+  @doc """
+  Точка входу для `escript` і для релізу.
+
+  Ставимо явний код виходу: за замовчуванням escript завершився б з 0
+  незалежно від того, чи завершилась сесія успішно, а помилка при
+  старті мала б давати ненульовий код.
+  """
+  def main(_argv) do
+    start_cli()
+    :ok
+  catch
+    kind, reason ->
+      IO.puts(:stderr, "Ella exited unexpectedly: #{Exception.format(kind, reason, [])}\n")
+      :ok
+  end
+
+  @doc """
+  Запускає інтерактивний CLI. Повертає :ok або {:error, reason}.
+  """
   def start_cli do
+    # У релізі й escript застосунок уже стартував через :mod, тож
+    # застосунки, яким це потрібно, піднімаємо самі.
+    {:ok, _} = Application.ensure_all_started(:ssl)
+
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(

@@ -122,12 +122,31 @@ uncommitted work of yours.
 
 ## Quick Start Guide
 
-### Starting the CLI
-To launch the interactive CLI, run the following command in your IEx shell:
+### Running from source
+
+```sh
+iex -S mix
+```
+
+then:
 
 ```elixir
 Ella.start_cli()
 ```
+
+### Building a single-file CLI
+
+```sh
+mix escript.build   # produces ./ella
+./ella
+```
+
+One self-contained executable (~2 MB) with the application and all
+dependencies inside. **Erlang/OTP must be installed on the user's machine** —
+see [Standalone binaries](#standalone-binaries) if that is not acceptable.
+
+The CLI is interactive, so it needs a real terminal. It will not work when
+piped into `head` or run from a script without a TTY.
 
 ### CLI Commands
 
@@ -171,3 +190,30 @@ The recommended workflow for using Ella is as follows:
 ## Customization
 
 You can define custom coding standards, architectural preferences, or project-specific constraints by modifying the `ProjectRules` configuration. The agent references these rules to ensure consistency across the codebase.
+
+## Standalone binaries
+
+`mix escript.build` still requires Erlang on the user's machine. If Ella has to
+reach people who do not have it, the options are:
+
+| Approach | Needs Erlang on user's machine | Self-contained |
+| :--- | :--- | :--- |
+| `mix escript.build` (current) | yes | no |
+| `mix release` + tar.gz | yes | no |
+| [Burrito](https://github.com/burrito-elixir/burrito) | no | yes |
+
+**Burrito is the intended path** for a single binary that runs anywhere. It is
+not configured yet, deliberately, for two reasons:
+
+1. **Toolchain.** It pins **Zig 0.15.2**. The README warns that newer Zig is
+   unsupported. Verify the build works before investing in the config.
+2. **Entry point.** Burrito starts the application through a `:mod` callback,
+   so `mix.exs` would need an `Ella.Application` whose `start/2` calls
+   `Ella.start_cli()`.
+
+`bakeware` is not an alternative: it was last updated in May 2022, and Burrito
+is the maintained successor.
+
+To set it up: add `{:burrito, "~> 1.6", runtime: false}`, add the `:mod` entry
+point, configure `releases/0` with `steps: [:assemble, &Burrito.wrap/1]`, then
+run `MIX_ENV=prod mix release`.
