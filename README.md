@@ -79,6 +79,33 @@ Only `description` is required. `name` defaults to the file name.
 prompt; the body is loaded on demand via `load_skill`. Keeping every skill in the
 prompt permanently would cost as much context as the instructions themselves.
 
+### Writing your own
+
+A skill is the place to put what the agent cannot infer from the code: how to
+verify a change, which style to follow, which commands are safe. This repository
+uses `.ella/skills/verify.md`:
+
+```markdown
+---
+name: Verify changes
+description: How to check your work after editing code
+tools: [system_exec, read_file]
+---
+After changing any file under `src/`, run:
+
+    npm test
+
+A failing test is a real problem: fix the cause, do not weaken the assertion.
+```
+
+The same file works in any language — the agent reads it rather than hardcoding
+`mix test`. Swap in `pytest`, `cargo test`, `go test ./...`, or whatever your
+project actually runs.
+
+For a pure Elixir setup, this is what `/rewind`, `/protected` and the rest of
+this README describe. To inspect what a skill would look like, drop a file in
+and run `/skills`.
+
 **Tool restrictions.** `tools:` limits what the agent can use while the skill is
 active. The restriction applies to the current request and lifts on the next one,
 so it cannot leak into unrelated work. `/skills` lists what was found.
@@ -88,6 +115,10 @@ so it cannot leak into unrelated work. `/skills` lists what was found.
 All file access is confined to the project root: absolute paths, `..` traversal, and symlinks
 pointing outside the project are rejected. Commands that would destroy state irreversibly
 (`rm`, `sudo`, `git reset --hard`, ...) are blocked and must be run by the user directly.
+
+**Undo.** Every file the agent modifies is copied aside before the first change, so `/rewind`
+restores it; files the agent created are deleted. This works without git and does not touch
+uncommitted work of yours.
 
 ## Quick Start Guide
 
@@ -109,6 +140,7 @@ Ella.start_cli()
 | `/context` | Show current context size against the budget |
 | `/skills` | List discovered project skills |
 | `/protected` | Show protected paths and whether approval is required |
+| `/rewind` | Undo everything the agent changed this session |
 | `/mcp <executable> <args>` | Register an MCP server |
 | `/exit` | Terminate the session |
 

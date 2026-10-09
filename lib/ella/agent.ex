@@ -6,6 +6,7 @@ defmodule Ella.Agent do
   alias Ella.Mcp.ToolAdapter
   alias Ella.Storage
   alias Ella.Tool
+  alias Ella.Snapshot
 
   # --- Client API ---
 
@@ -48,6 +49,7 @@ defmodule Ella.Agent do
   @impl true
   def init(opts) do
     Storage.ensure_storage_created!()
+    {:ok, _snapshot} = Snapshot.ensure_started()
 
     mode = Keyword.get(opts, :mode, :plan)
 

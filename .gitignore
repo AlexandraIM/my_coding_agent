@@ -31,6 +31,7 @@ erl_crash.dump
 /.ella/*
 !/.ella/skills/
 !/.ella/config.json
+/.ella/snapshots/
 burrito_out/
 
 # Локальні налаштування редактора/агента

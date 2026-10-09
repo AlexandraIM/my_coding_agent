@@ -3,7 +3,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /usage, /context, /skills, /protected, /mcp <executable> <args>, /exit"
+      "Commands: /plan, /build, /usage, /context, /skills, /protected, /rewind, /mcp <executable> <args>, /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -67,6 +67,31 @@ defmodule Ella do
     _ -> Owl.IO.puts("Protected paths are not available.")
   end
 
+  defp print_rewind do
+    case Ella.Snapshot.rewind() do
+      {:ok, %{restored: restored, removed: removed}} ->
+        if restored == [] and removed == [] do
+          Owl.IO.puts("Nothing to rewind.")
+        else
+          Owl.IO.puts(Owl.Data.tag("Rewound agent changes:", :cyan))
+
+          Enum.each(restored, fn path ->
+            Owl.IO.puts("  restored #{path}")
+          end)
+
+          Enum.each(removed, fn path ->
+            Owl.IO.puts("  removed  #{path}")
+          end)
+        end
+
+      {:error, :no_snapshot_session} ->
+        Owl.IO.puts("No snapshot session is running.")
+
+      {:error, reason} ->
+        Owl.IO.puts("Rewind failed: #{inspect(reason)}")
+    end
+  end
+
   defp loop(pid) do
     input = Owl.IO.input(label: "You") |> String.trim()
 
@@ -88,6 +113,10 @@ defmodule Ella do
 
       input == "/protected" ->
         print_protected()
+        loop(pid)
+
+      input == "/rewind" ->
+        print_rewind()
         loop(pid)
 
       input == "/plan" ->
