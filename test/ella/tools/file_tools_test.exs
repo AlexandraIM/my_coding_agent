@@ -28,7 +28,9 @@ defmodule Ella.Tools.FileToolsTest do
   describe "ReadFile" do
     test "читає файл" do
       WriteFile.execute(%{"path" => "note.txt", "content" => "hello"})
-      assert {:ok, "hello"} = ReadFile.execute(%{"path" => "note.txt"})
+
+      assert {:ok, output} = ReadFile.execute(%{"path" => "note.txt"})
+      assert output =~ "1\thello"
     end
 
     test "не читає поза проєктом" do

@@ -82,6 +82,46 @@ defmodule Ella.Sandbox do
   end
 
   @doc """
+  Перетворює абсолютний шлях на відносний від root.
+
+  Повертає {:ok, relative} або {:error, reason}, якщо шлях поза межами.
+  """
+  @spec relativize(String.t()) :: {:ok, String.t()} | {:error, String.t()}
+  def relativize(absolute_path) do
+    expanded = Path.expand(absolute_path)
+    root = Path.expand(root())
+
+    cond do
+      expanded == root ->
+        {:ok, "."}
+
+      is_binary(root) and String.starts_with?(expanded, <<root::binary, "/">>) ->
+        {:ok,
+         binary_part(expanded, byte_size(root) + 1, byte_size(expanded) - byte_size(root) - 1)}
+
+      true ->
+        {:error, "Path is outside the project root: #{absolute_path}"}
+    end
+  end
+
+  @doc """
+  Чи існує шлях (вже перевірений через `resolve/1`).
+
+  `File.exists?/1` повертає false для битих символічних лінків,
+  тому перевіряємо й їх.
+  """
+  def exists?(absolute_path) do
+    File.exists?(absolute_path) or symlink?(absolute_path)
+  end
+
+  @doc """
+  Чи є шлях символічним лінком (-broken лінки теж).
+  """
+  def symlink?(path) do
+    match?({:ok, %File.Stat{type: :symlink}}, File.lstat(path))
+  end
+
+  @doc """
   Перевіряє шлях і одночасно читає файл.
 
   Корисно для інструментів читання: не дає TOCTOU-проміжку між

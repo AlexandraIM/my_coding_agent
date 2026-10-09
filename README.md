@@ -17,12 +17,32 @@ Ella fully supports the **Model Context Protocol (MCP)**, enabling it to connect
 
 Ella is equipped with a powerful set of tools to interact with the environment:
 
-- `ReadFile`: Reads the content of a specific file.
-- `WriteFile`: Creates or completely overwrites a file.
-- `ApplyPatch`: Performs precise search-and-replace operations within a file.
-- `SystemExec`: Executes terminal commands (e.g., running tests, building projects).
-- `DelegateTask`: Spawns autonomous sub-agents to handle isolated sub-tasks.
-- `MCP Tools`: Dynamically loaded tools provided by connected MCP servers.
+### Navigation (read-only, available in Plan Mode)
+
+- `list_dir`: Lists a directory as a tree with file sizes. Use this first to understand project structure.
+- `glob`: Finds files matching a pattern, e.g. `lib/**/*.ex`.
+- `grep`: Searches file contents with a regular expression. Returns `file:line` hits. Uses ripgrep when available, otherwise falls back to a built-in walker.
+- `read_file`: Reads a file. Supports `offset`/`limit` for reading large files in parts.
+
+### Modification (Build Mode only)
+
+- `write_file`: Creates or completely overwrites a file.
+- `apply_patch`: Performs precise search-and-replace operations within a file. Refuses ambiguous search strings.
+
+### Execution (Build Mode only)
+
+- `system_exec`: Executes terminal commands through a shell (pipes, `&&`, redirection supported), with a timeout and output truncation.
+- `delegate_task`: Spawns autonomous sub-agents to handle isolated sub-tasks.
+
+### Extensions
+
+- `MCP Tools`: Dynamically loaded tools provided by connected MCP servers. Tools that do not declare `readOnlyHint` are hidden in Plan Mode.
+
+### Safety
+
+All file access is confined to the project root: absolute paths, `..` traversal, and symlinks
+pointing outside the project are rejected. Commands that would destroy state irreversibly
+(`rm`, `sudo`, `git reset --hard`, ...) are blocked and must be run by the user directly.
 
 ## Quick Start Guide
 

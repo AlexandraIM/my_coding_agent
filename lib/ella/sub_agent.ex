@@ -20,6 +20,9 @@ defmodule Ella.SubAgent do
   def all_tools do
     [
       Ella.Tools.ReadFile,
+      Ella.Tools.Grep,
+      Ella.Tools.Glob,
+      Ella.Tools.ListDir,
       Ella.Tools.WriteFile,
       Ella.Tools.ApplyPatch,
       Ella.Tools.SystemExec
@@ -35,11 +38,14 @@ defmodule Ella.SubAgent do
 
   SystemExec свідомо відсутній: він дозволяє змінити стан через шелл
   (`> file`, `rm`), тому в plan mode недоступний ні головному агенту,
-  ні сабагенту.
+  ні сабагенту. Пошук і читання лишаються доступними.
   """
   def read_only_tools do
     [
-      Ella.Tools.ReadFile
+      Ella.Tools.ReadFile,
+      Ella.Tools.Grep,
+      Ella.Tools.Glob,
+      Ella.Tools.ListDir
     ]
   end
 
@@ -56,8 +62,10 @@ defmodule Ella.SubAgent do
 
     RULES:
     1. Focus strictly on the task provided. Do not modify unrelated files or perform out-of-scope actions.
-    2. If you edit code, verify your changes using `system_exec` if applicable.
-    3. Return a clear, concise summary of what was done, including modified files or findings.
+    2. Locate relevant code with `grep`/`glob` and read with `read_file` using offset/limit
+       for large files, rather than reading whole files.
+    3. If you edit code, verify your changes using `system_exec` if applicable.
+    4. Return a clear, concise summary of what was done, including modified files or findings.
     """
 
     state = %{
