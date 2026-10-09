@@ -342,7 +342,9 @@ defmodule Ella.Agent do
          state,
          current_iter
        ) do
-    case LlmClient.chat_completion(context_messages, active_tools, state.llm_opts) do
+    llm_opts = streaming_opts(state)
+
+    case LlmClient.chat_completion(context_messages, active_tools, llm_opts) do
       {:ok, %{"tool_calls" => tool_calls} = message, usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
         state = %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
@@ -373,19 +375,47 @@ defmodule Ella.Agent do
       {:ok, %{"content" => content} = message, usage}
       when not is_nil(content) and content != "" ->
         state = %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
-        Owl.IO.puts([Owl.Data.tag("Agent: ", :blue), content])
+        finish_turn(content)
         {:ok, original_messages ++ [message], content, state.usage}
 
       {:ok, message, usage} ->
         state = %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
-        content = message["content"] || "Done."
-        Owl.IO.puts([Owl.Data.tag("Agent: ", :blue), content])
-        {:ok, original_messages ++ [message], content, state.usage}
+        finish_turn(message["content"] || "Done.")
+        {:ok, original_messages ++ [message], message["content"] || "Done.", state.usage}
 
       {:error, reason} ->
         Owl.IO.puts(Owl.Data.tag("Error calling LLM: #{Ella.Llm.Error.message(reason)}", :red))
         {:error, reason, state.usage}
     end
+  end
+
+  # Під час стріму текст уже надруковано по фрагментах, тому
+  # друкуємо лише перенос рядка, щоб не продублювати його.
+  defp finish_turn(content) do
+    if streamed?() do
+      IO.puts("")
+      IO.puts("")
+    else
+      Owl.IO.puts([Owl.Data.tag("Agent: ", :blue), content])
+    end
+  end
+
+  defp streamed?, do: Process.get(:ella_streaming, false)
+
+  # Під час стріму друкуємо фрагменти як є: довгі рядки через Owl
+  # зливались б в один, а короткі не переносилися б.
+  defp streaming_opts(state) do
+    Keyword.put(state.llm_opts, :on_text, fn fragment ->
+      Process.put(:ella_streaming, true)
+
+      if String.length(fragment) > 80 do
+        Owl.IO.puts(Owl.Data.tag(fragment, :blue))
+      else
+        IO.write(fragment)
+      end
+
+      :ok
+    end)
   end
 
   defp build_tool_map(tools) do

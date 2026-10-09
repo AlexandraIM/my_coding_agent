@@ -22,6 +22,9 @@ defmodule Ella.LlmClient do
     * `:retry_delay_fn` — fun(attempt) -> мілісекунди, для тестів
     * `:on_retry` — fun(attempt, error, delay) для логування
     * `:sleep_fn` — fun(ms), для тестів
+    * `:on_text` — fun(fragment) для сповіщення про кожен фрагмент
+      відповіді; за замовчуванням стрім увімкнено й фрагменти
+      друкуються в консоль у реальному часі
 
   Повертає {:ok, message, usage} або {:error, Error.t()}.
   """
@@ -42,6 +45,7 @@ defmodule Ella.LlmClient do
     retry_delay_fn = Keyword.get(opts, :retry_delay_fn, &backoff/1)
     on_retry = Keyword.get(opts, :on_retry, &default_on_retry/3)
     verbose = Keyword.get(opts, :verbose, false)
+    on_text = Keyword.get(opts, :on_text, &default_on_text/1)
 
     attempt(
       adapter,
@@ -53,6 +57,7 @@ defmodule Ella.LlmClient do
       sleep_fn,
       retry_delay_fn,
       on_retry,
+      on_text,
       verbose
     )
   end
@@ -67,6 +72,7 @@ defmodule Ella.LlmClient do
          sleep_fn,
          retry_delay_fn,
          on_retry,
+         on_text,
          verbose
        ) do
     if verbose do
@@ -75,7 +81,7 @@ defmodule Ella.LlmClient do
       Owl.IO.puts([Owl.Data.tag("Config: ", :cyan), inspect(redact(config))])
     end
 
-    result = adapter.chat_completion(messages, tools, config)
+    result = invoke(adapter, messages, tools, config, on_text)
 
     case result do
       {:ok, message, usage} ->
@@ -120,10 +126,33 @@ defmodule Ella.LlmClient do
               sleep_fn,
               retry_delay_fn,
               on_retry,
+              on_text,
               verbose
             )
         end
     end
+  end
+
+  # Адаптер без stream-підтримки отримує звичайний виклик: краще
+  # показати відповідь одразу, ніж не показати її зовсім.
+  defp invoke(adapter, messages, tools, config, on_text) do
+    if function_exported?(adapter, :chat_completion_stream, 4) do
+      adapter.chat_completion_stream(messages, tools, config, on_text)
+    else
+      adapter.chat_completion(messages, tools, config)
+    end
+  end
+
+  defp default_on_text(fragment) do
+    # Owl не переносить рядки сам, тому друкуємо фрагменти як є:
+    # укороткі шматки просто зливались б в один рядок.
+    if String.length(fragment) > 80 do
+      Owl.IO.puts(Owl.Data.tag(fragment, :blue))
+    else
+      IO.write(fragment)
+    end
+
+    :ok
   end
 
   # Retry-After від сервера має пріоритет над власним backoff.

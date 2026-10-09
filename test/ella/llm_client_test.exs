@@ -132,6 +132,44 @@ defmodule Ella.LlmClientTest do
     end
   end
 
+  describe "сумісність з адаптерами без streaming" do
+    defmodule LegacyAdapter do
+      @behaviour Ella.Llm.Adapter
+
+      @impl true
+      def chat_completion(_messages, _tools, config) do
+        agent = Process.get(:ella_test_pid)
+        send(agent, {:legacy_called, true})
+        Keyword.fetch!(config, :result)
+      end
+    end
+
+    test "використовує звичайний виклик, якщо chat_completion_stream/4 відсутня" do
+      Process.put(:ella_test_pid, self())
+      message = %{"content" => "legacy response"}
+
+      assert {:ok, ^message, _usage} =
+               LlmClient.chat_completion([], [],
+                 adapter: LegacyAdapter,
+                 config: [result: {:ok, message, nil}],
+                 sleep_fn: &no_sleep/1
+               )
+
+      assert_received {:legacy_called, true}
+    end
+
+    test "кастомний адаптер отримує конфіг без падіння" do
+      Process.put(:ella_test_pid, self())
+
+      assert {:error, %Error{}} =
+               LlmClient.chat_completion([], [],
+                 adapter: LegacyAdapter,
+                 config: [result: {:error, "boom"}],
+                 sleep_fn: &no_sleep/1
+               )
+    end
+  end
+
   describe "backoff" do
     test "зростає експоненційно" do
       first = LlmClient.backoff(1)

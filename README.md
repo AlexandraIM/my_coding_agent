@@ -67,6 +67,11 @@ Ella.start_cli()
 
 ### Reliability
 
+Responses stream token by token via SSE, so the agent's reply appears while it is still being
+generated. Streaming is transparent: the assembled message and token usage are identical to a
+non-streamed call, and an adapter without `chat_completion_stream/4` falls back to a plain
+request rather than losing its reply.
+
 Transient LLM failures (429, 5xx, network) are retried with exponential backoff and jitter,
 up to four attempts, honouring `Retry-After` when the server sends it. Permanent failures
 (401, malformed requests) fail immediately rather than burning retries.
