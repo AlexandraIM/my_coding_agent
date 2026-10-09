@@ -30,25 +30,40 @@ defmodule Ella.Tools.ApplyPatch do
     search_clean = String.replace(search, "\u00A0", " ")
     replace_clean = String.replace(replace, "\u00A0", " ")
 
-    case File.read(path) do
-      {:ok, content} ->
-        content_clean = String.replace(content, "\u00A0", " ")
+    with {:ok, content} <- Ella.Sandbox.read(path) do
+      content_clean = String.replace(content, "\u00A0", " ")
 
-        if String.contains?(content_clean, search_clean) do
-          updated = String.replace(content_clean, search_clean, replace_clean, global: false)
-          File.write!(path, updated)
-          {:ok, "Successfully patched #{path}."}
-        else
+      occurrences = count_occurrences(content_clean, search_clean)
+
+      case occurrences do
+        0 ->
           {:error, "Could not find target 'search' string in #{path}. Verify formatting."}
-        end
 
-      {:error, reason} ->
-        {:error, "Failed to read #{path}: #{inspect(reason)}"}
+        1 ->
+          updated = String.replace(content_clean, search_clean, replace_clean, global: false)
+
+          case Ella.Sandbox.write(path, updated) do
+            :ok -> {:ok, "Successfully patched #{path}."}
+            {:error, reason} -> {:error, reason}
+          end
+
+        _ ->
+          {:error,
+           "Ambiguous patch: the 'search' string occurs #{occurrences} times in #{path}. " <>
+             "Include more surrounding context to make it unique."}
+      end
     end
   end
 
   # Fallback для випадків, якщо аргументи пришли у нетиповому форматі
   def execute(args) do
     {:error, "Invalid arguments passed to apply_patch: #{inspect(args)}"}
+  end
+
+  defp count_occurrences(haystack, needle) do
+    haystack
+    |> String.split(needle, parts: :infinity)
+    |> length()
+    |> Kernel.-(1)
   end
 end

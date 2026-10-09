@@ -5,6 +5,7 @@ defmodule Ella.Agent do
   alias Ella.ProjectRules
   alias Ella.Mcp.ToolAdapter
   alias Ella.Storage
+  alias Ella.Tool
 
   # --- Client API ---
 
@@ -52,10 +53,12 @@ defmodule Ella.Agent do
       mcp_clients: [],
       mcp_tools: [],
       llm_opts: llm_opts,
-      project_rules: project_rules
+      project_rules: project_rules,
+      max_iterations: Keyword.get(opts, :max_iterations, Tool.max_iterations())
     }
 
     state = restore_saved_mcps(state)
+    publish_context(state)
 
     {:ok, update_system_prompt(state)}
   end
@@ -63,6 +66,7 @@ defmodule Ella.Agent do
   @impl true
   def handle_call({:set_mode, new_mode}, _from, state) do
     new_state = %{state | mode: new_mode} |> update_system_prompt()
+    publish_context(new_state)
     mode_name = if new_mode == :plan, do: "PLANNING (Read-Only)", else: "BUILDING (Full Access)"
 
     Owl.IO.puts(Owl.Data.tag("Switched to #{mode_name} mode.", :magenta))
@@ -112,7 +116,7 @@ defmodule Ella.Agent do
     new_messages = state.messages ++ [%{"role" => "user", "content" => user_prompt}]
     active_tools = get_active_tools(state)
 
-    case run_loop(new_messages, active_tools, state) do
+    case run_loop(new_messages, active_tools, state, 0) do
       {:ok, final_messages, response_text} ->
         {:reply, {:ok, response_text}, %{state | messages: final_messages}}
 
@@ -125,7 +129,23 @@ defmodule Ella.Agent do
 
   defp get_active_tools(%{mode: :plan, all_tools: tools, mcp_tools: mcp_tools}) do
     plan_local = Enum.filter(tools, fn tool -> tool.name() in ["read_file", "delegate_task"] end)
-    plan_local ++ mcp_tools
+
+    # MCP-інструменти додаються в plan mode лише тоді, коли сервер
+    # явно підтвердив, що вони не змінюють стан.
+    plan_mcp = Enum.filter(mcp_tools, & &1.read_only)
+
+    dropped = length(mcp_tools) - length(plan_mcp)
+
+    if dropped > 0 do
+      Owl.IO.puts(
+        Owl.Data.tag(
+          "[plan mode] #{dropped} MCP tool(s) hidden: not marked read-only.",
+          :yellow
+        )
+      )
+    end
+
+    plan_local ++ plan_mcp
   end
 
   defp get_active_tools(%{mode: :build, all_tools: tools, mcp_tools: mcp_tools}) do
@@ -182,6 +202,14 @@ defmodule Ella.Agent do
     set_system_message(state, prompt)
   end
 
+  # Інструменти виконуються у процесі агента, а DelegateTask потребує
+  # знати поточний режим і налаштування LLM. Process dictionary — найпростіший
+  # спосіб це передати без розширення контракту інструментів.
+  defp publish_context(state) do
+    Process.put(:ella_agent_mode, state.mode)
+    Process.put(:ella_agent_llm_opts, state.llm_opts)
+  end
+
   defp set_system_message(state, prompt) do
     filtered_messages = Enum.reject(state.messages, fn m -> m["role"] == "system" end)
     %{state | messages: [%{"role" => "system", "content" => prompt} | filtered_messages]}
@@ -189,7 +217,17 @@ defmodule Ella.Agent do
 
   # --- Agentic Loop ---
 
-  defp run_loop(messages, active_tools, state) do
+  defp run_loop(_messages, _active_tools, state, current_iter)
+       when current_iter >= state.max_iterations do
+    notice =
+      "Iteration limit reached (#{state.max_iterations}). " <>
+        "Stopping the loop and returning control to the user."
+
+    Owl.IO.puts(Owl.Data.tag(notice, :yellow))
+    {:ok, notice}
+  end
+
+  defp run_loop(messages, active_tools, state, current_iter) do
     tool_map = build_tool_map(active_tools)
     Owl.IO.puts(Owl.Data.tag("Thinking (#{state.mode} mode)...", :cyan))
 
@@ -201,19 +239,19 @@ defmodule Ella.Agent do
         tool_results_messages =
           Enum.map(tool_calls, fn call ->
             tool_name = call["function"]["name"]
-            tool_args = Jason.decode!(call["function"]["arguments"])
             call_id = call["id"]
 
             Owl.IO.puts([
               Owl.Data.tag("Tool Call [#{tool_name}]: ", :yellow),
-              inspect(tool_args)
+              inspect(call["function"]["arguments"])
             ])
 
-            result_text = execute_tool(tool_name, tool_args, tool_map)
+            result_text = execute_tool_call(call, tool_name, tool_map)
+
             %{"role" => "tool", "tool_call_id" => call_id, "content" => result_text}
           end)
 
-        run_loop(updated_messages ++ tool_results_messages, active_tools, state)
+        run_loop(updated_messages ++ tool_results_messages, active_tools, state, current_iter + 1)
 
       {:ok, %{"content" => content} = message} when not is_nil(content) and content != "" ->
         Owl.IO.puts([Owl.Data.tag("Agent: ", :blue), content])
@@ -235,6 +273,18 @@ defmodule Ella.Agent do
       %{name: name} = mcp_tool -> {name, mcp_tool}
       tool_module when is_atom(tool_module) -> {tool_module.name(), tool_module}
     end)
+  end
+
+  defp execute_tool_call(call, tool_name, tool_map) do
+    encoded = call["function"]["arguments"]
+
+    case Tool.parse_args(encoded) do
+      {:ok, tool_args} ->
+        execute_tool(tool_name, tool_args, tool_map)
+
+      {:error, reason} ->
+        "ERROR: #{reason}"
+    end
   end
 
   defp execute_tool(name, args, tool_map) do
@@ -265,7 +315,20 @@ defmodule Ella.Agent do
   end
 
   # Хелпер для відновлення збережених MCP при старті
+  @doc false
+  # У тестах MCP не піднімається: процеси реальні, повільні й залежать від
+  # локального ~/.ella/mcp.json. Продакшн-шлях не змінюється.
+  def restore_mcp?, do: Application.get_env(:ella, :restore_mcp, true)
+
   defp restore_saved_mcps(state) do
+    if restore_mcp?() do
+      do_restore_saved_mcps(state)
+    else
+      state
+    end
+  end
+
+  defp do_restore_saved_mcps(state) do
     saved_servers = Storage.load_mcp_config()
 
     Enum.reduce(saved_servers, state, fn {name, %{"command" => exec, "args" => args}},

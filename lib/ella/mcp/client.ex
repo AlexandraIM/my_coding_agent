@@ -104,7 +104,8 @@ defmodule Ella.Mcp.Client do
   end
 
   @impl true
-  def handle_info({port, {:data, {tag, line}}}, %{port: port} = state) when tag in [:line, :eol] do
+  def handle_info({port, {:data, {tag, line}}}, %{port: port} = state)
+      when tag in [:line, :eol] do
     full_line = state.buffer <> line
     state = %{state | buffer: ""}
 

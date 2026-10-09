@@ -7,8 +7,7 @@ defmodule Ella.MixProject do
       version: "0.2.0",
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
-      deps: deps(),
-      releases: releases()
+      deps: deps()
     ]
   end
 
@@ -25,20 +24,6 @@ defmodule Ella.MixProject do
       {:req, "~> 0.5"},
       {:json, "~> 1.4"},
       {:owl, "~> 0.11.0"}
-    ]
-  end
-
-  defp releases do
-    [
-      ella: [
-        steps: [:assemble, &Burrito.Builder.build/1],
-        burrito: [
-          targets: [
-            macos_arm64: [os: :darwin, cpu: :aarch64],
-            linux_x86_64: [os: :linux, cpu: :x86_64]
-          ]
-        ]
-      ]
     ]
   end
 end

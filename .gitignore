@@ -24,3 +24,7 @@ erl_crash.dump
 # Language Server and macOS metadata
 /.elixir_ls/
 .DS_Store
+
+# Локальна конфігурація Ella (MCP-сервери, скіли)
+/.ella/
+burrito_out/

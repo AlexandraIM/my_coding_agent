@@ -18,9 +18,10 @@ defmodule Ella.Tools.ReadFile do
   end
 
   def execute(%{"path" => path}) do
-    case File.read(path) do
-      {:ok, content} -> {:ok, content}
-      {:error, reason} -> {:error, "Failed to read #{path}: #{inspect(reason)}"}
-    end
+    Ella.Sandbox.read(path)
+  end
+
+  def execute(args) do
+    {:error, "Invalid arguments passed to read_file: #{inspect(args)}"}
   end
 end

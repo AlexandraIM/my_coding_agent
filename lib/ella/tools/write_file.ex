@@ -24,15 +24,12 @@ defmodule Ella.Tools.WriteFile do
   def execute(%{"path" => path, "content" => content}) do
     clean_content = String.replace(content, "\u00A0", " ")
 
-    # Автоматично створюємо вкладені папки, якщо вони не існують
-    path |> Path.dirname() |> File.mkdir_p!()
-
-    case File.write(path, clean_content) do
+    case Ella.Sandbox.write(path, clean_content) do
       :ok ->
         {:ok, "Successfully wrote content to #{path}."}
 
       {:error, reason} ->
-        {:error, "Failed to write to #{path}: #{inspect(reason)}"}
+        {:error, reason}
     end
   end
 
