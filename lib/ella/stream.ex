@@ -111,17 +111,34 @@ defmodule Ella.Stream do
   окремо: кожен виклик приносить свій буфер, а наприкінці ми
   повертаємо стан Req недоторканим.
 
-  Приймає функцію, яка викликається для кожної розпізнаної SSE-події.
+  `on_event` викликається для кожної розпізнаної SSE-події. Якщо
+  вона поверне `{:halt, reason}`, акумулятор поверне `{:halt, ...}`
+  у Req і з'єднання закриється — сервер перестане надсилати чанки,
+  а не просто припиниться їхня обробка.
+
+  Повертає :halt, якщо `on_event` повернула {:halt, reason}.
   """
   def accumulator(on_event) do
     fn
       {:data, data}, acc ->
         {:ok, events, new_state} = feed(data, %{buffer: read_sse_buffer(acc)})
-        Enum.each(events, &on_event.(&1))
-        {:cont, put_sse_buffer(acc, new_state.buffer)}
+
+        case reduce_events(events, on_event, acc) do
+          {:halt, _reason} -> {:halt, put_sse_buffer(acc, new_state.buffer)}
+          {:cont, next_acc} -> {:cont, put_sse_buffer(next_acc, new_state.buffer)}
+        end
 
       {:done, acc}, _resp ->
         {:done, acc}
+    end
+  end
+
+  defp reduce_events([], _on_event, acc), do: {:cont, acc}
+
+  defp reduce_events([event | rest], on_event, acc) do
+    case on_event.(event) do
+      {:halt, reason} -> {:halt, reason}
+      _ -> reduce_events(rest, on_event, acc)
     end
   end
 
@@ -152,15 +169,4 @@ defmodule Ella.Stream do
       {:error, _} -> nil
     end
   end
-
-  @doc """
-  Дістає накопичений текст із чанків OpenAI-сумімного формату
-  (`choices[0].delta.content`).
-  """
-  def extract_delta(%{"choices" => [%{"delta" => %{"content" => content}} | _]})
-      when is_binary(content) do
-    {:text, content}
-  end
-
-  def extract_delta(_chunk), do: :skip
 end

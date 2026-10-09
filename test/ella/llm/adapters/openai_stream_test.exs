@@ -12,7 +12,7 @@ defmodule Ella.Llm.Adapters.OpenAI.StreamTest do
     "data: [DONE]\n\n" <> body
   end
 
-  defp start_server(body) do
+  defp start_server(body, opts \\ []) do
     {:ok, listener} =
       :gen_tcp.listen(0, [:binary, packet: :raw, active: false, reuseaddr: true])
 
@@ -28,14 +28,19 @@ defmodule Ella.Llm.Adapters.OpenAI.StreamTest do
 
       :gen_tcp.send(socket, headers)
 
-      # Репнемо дрібними шматками, щоб перевірити буферизацію SSE.
+      # Репнемо дрібними шматочками, щоб перевірити буферизацію SSE.
       for chunk <- chunks(body), do: :gen_tcp.send(socket, chunk)
 
       send(parent, :sent)
 
-      # Реальний SSE не має content-length і тримає з'єднання відкритим;
-      # клієнт закриває його сам після [DONE].
-      Process.sleep(200)
+      if Keyword.get(opts, :keep_open, false) do
+        # Сервер, який не завершує відповідь: клієнт має закрити
+        # з'єднання сам, інакше тест зависне.
+        Process.sleep(5_000)
+      else
+        Process.sleep(200)
+      end
+
       :gen_tcp.close(socket)
     end)
 
@@ -157,6 +162,51 @@ defmodule Ella.Llm.Adapters.OpenAI.StreamTest do
 
       assert length(message["tool_calls"]) == 2
       assert Enum.map(message["tool_calls"], & &1["function"]["name"]) == ["grep", "glob"]
+    end
+  end
+
+  describe "chat_completion_stream/4 — зупинка" do
+    test "on_text може перервати потік" do
+      chunks =
+        Enum.map(1..50, fn i ->
+          Jason.encode!(%{"choices" => [%{"delta" => %{"content" => "w#{i} "}}]})
+        end)
+
+      body = sse(chunks)
+      {listener, port} = start_server(body, keep_open: true)
+      on_exit(fn -> :gen_tcp.close(listener) end)
+
+      parent = self()
+
+      on_text = fn fragment ->
+        send(parent, {:fragment, fragment})
+
+        if String.contains?(fragment, "w2") do
+          {:halt, :user_cancelled}
+        else
+          :ok
+        end
+      end
+
+      assert {:error, error} = call(port, on_text)
+      assert error.message =~ "halted"
+      assert error.message =~ "user_cancelled"
+      refute error.retryable?
+
+      # Обрив зупинив читання: далі ніхто нічого не надсилає.
+      refute_receive {:fragment, "w3 "}, 200
+    end
+
+    test "потік без зупинки повертає повний текст" do
+      chunks =
+        Enum.map(1..5, fn i ->
+          Jason.encode!(%{"choices" => [%{"delta" => %{"content" => "x"}}]})
+        end)
+
+      {listener, port} = start_server(sse(chunks))
+      on_exit(fn -> :gen_tcp.close(listener) end)
+
+      assert {:ok, %{"content" => "xxxxx"}, _usage} = call(port, fn _ -> :ok end)
     end
   end
 

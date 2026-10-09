@@ -17,7 +17,11 @@ defmodule Ella.Llm.Adapters.Poolside do
   @impl true
   def chat_completion_stream(messages, tools, config, on_text) do
     model = model(config)
-    {:ok, state} = Agent.start_link(fn -> %{buffer: "", text: "", tool_calls: [], usage: nil} end)
+
+    {:ok, state} =
+      Agent.start_link(fn ->
+        %{buffer: "", text: "", tool_calls: [], usage: nil, halted: nil}
+      end)
 
     into = Stream.accumulator(fn event -> handle_event(event, on_text, state) end)
 
@@ -31,8 +35,14 @@ defmodule Ella.Llm.Adapters.Poolside do
         {:ok, %Req.Response{status: 200}} ->
           final = Agent.get(state, & &1)
 
-          {:ok, normalize_response(%{"text" => final.text, "tool_calls" => final.tool_calls}),
-           final.usage}
+          case final.halted do
+            nil ->
+              {:ok, normalize_response(%{"text" => final.text, "tool_calls" => final.tool_calls}),
+               final.usage}
+
+            reason ->
+              {:error, Error.permanent("Stream halted: #{inspect(reason)}")}
+          end
 
         {:ok, %Req.Response{status: status, body: body}} ->
           {:error, classify(status, body)}
@@ -52,8 +62,15 @@ defmodule Ella.Llm.Adapters.Poolside do
 
       %{"text" => text} when is_binary(text) and text != "" ->
         Agent.update(state, &%{&1 | text: &1.text <> text})
-        on_text.(text)
-        :ok
+
+        case on_text.(text) do
+          {:halt, reason} ->
+            Agent.update(state, &%{&1 | halted: reason})
+            {:halt, reason}
+
+          _ ->
+            :ok
+        end
 
       %{"tool_calls" => [call | _]} when is_map(call) ->
         Agent.update(state, &%{&1 | tool_calls: &1.tool_calls ++ [call]})

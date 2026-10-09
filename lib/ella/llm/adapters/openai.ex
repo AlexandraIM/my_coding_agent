@@ -43,7 +43,18 @@ defmodule Ella.Llm.Adapters.OpenAI do
     result =
       case req do
         {:ok, %Req.Response{status: 200}} ->
-          {:ok, state |> Agent.get(& &1) |> finalize(), Agent.get(state, & &1.usage)}
+          final = Agent.get(state, & &1)
+
+          # Потік було перервано: відповідь неповна, і виглядати як
+          # успішна вона не повинна — інакше агент збереже обрізаний
+          # текст і піде далі.
+          case final.halted do
+            nil ->
+              {:ok, finalize(final), final.usage}
+
+            reason ->
+              {:error, Error.permanent("Stream halted: #{inspect(reason)}")}
+          end
 
         {:ok, %Req.Response{status: status, body: body, headers: headers}} ->
           {:error, classify(status, body, headers)}
@@ -84,13 +95,10 @@ defmodule Ella.Llm.Adapters.OpenAI do
        when is_binary(content) and content != "" do
     acc = %{acc | text: acc.text <> content}
 
-    acc =
-      case on_text.(content) do
-        {:halt, reason} -> %{acc | halted: reason}
-        _ -> acc
-      end
-
-    {acc, :ok}
+    case on_text.(content) do
+      {:halt, reason} -> {%{acc | halted: reason}, {:halt, reason}}
+      _ -> {acc, :ok}
+    end
   end
 
   defp apply_delta(acc, %{"tool_calls" => [call | _]}, _on_text) when is_map(call) do
