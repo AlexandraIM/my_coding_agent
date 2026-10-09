@@ -22,14 +22,16 @@ defmodule Ella.Tools.WriteFile do
   end
 
   def execute(%{"path" => path, "content" => content}) do
-    clean_content = String.replace(content, "\u00A0", " ")
+    with :ok <- Ella.WriteGuard.check(path, name()) do
+      clean_content = String.replace(content, " ", " ")
 
-    case Ella.Sandbox.write(path, clean_content) do
-      :ok ->
-        {:ok, "Successfully wrote content to #{path}."}
+      case Ella.Sandbox.write(path, clean_content) do
+        :ok ->
+          {:ok, "Successfully wrote content to #{path}."}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 

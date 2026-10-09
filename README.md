@@ -39,6 +39,24 @@ Ella is equipped with a powerful set of tools to interact with the environment:
 - `MCP Tools`: Dynamically loaded tools provided by connected MCP servers. Tools that do not declare `readOnlyHint` are hidden in Plan Mode.
 - `load_skill`: Reads the full text of a project skill (see below).
 
+## Protected files
+
+Some files break the whole project when edited carelessly — build files, lockfiles, CI config.
+List them in `.ella/config.json` and the agent asks before touching them:
+
+```json
+{
+  "protected_paths": ["mix.exs", "mix.lock", ".formatter.exs", ".github/"],
+  "require_approval": true
+}
+```
+
+A rule ending in `/` covers everything inside that directory. `/protected` shows the active list.
+
+**In a non-interactive session (CI, pipes) no question is asked and the change is refused.**
+A prompt nobody can answer would hang the run, so the agent is told to ask you instead.
+Set `require_approval` to `false` to allow the change with a warning printed instead.
+
 ## Skills
 
 Skills are Markdown files with YAML-style frontmatter that add project-specific
@@ -90,6 +108,7 @@ Ella.start_cli()
 | `/usage` | Show tokens and cost consumed this session |
 | `/context` | Show current context size against the budget |
 | `/skills` | List discovered project skills |
+| `/protected` | Show protected paths and whether approval is required |
 | `/mcp <executable> <args>` | Register an MCP server |
 | `/exit` | Terminate the session |
 

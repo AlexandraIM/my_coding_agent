@@ -1,0 +1,4 @@
+{
+  "protected_paths": ["mix.exs", "mix.lock", ".formatter.exs", ".github/"],
+  "require_approval": true
+}

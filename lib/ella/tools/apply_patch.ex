@@ -26,9 +26,20 @@ defmodule Ella.Tools.ApplyPatch do
   end
 
   def execute(%{"path" => path, "search" => search, "replace" => replace}) do
-    # Очищаємо від non-breaking spaces (\xA0), які іноді віддають LLM
-    search_clean = String.replace(search, "\u00A0", " ")
-    replace_clean = String.replace(replace, "\u00A0", " ")
+    with :ok <- Ella.WriteGuard.check(path, name()) do
+      do_patch(path, search, replace)
+    end
+  end
+
+  # Fallback для випадків, якщо аргументи пришли у нетиповому форматі
+  def execute(args) do
+    {:error, "Invalid arguments passed to apply_patch: #{inspect(args)}"}
+  end
+
+  # Очищаємо від non-breaking spaces (\xA0), які іноді віддають LLM
+  defp do_patch(path, search, replace) do
+    search_clean = String.replace(search, " ", " ")
+    replace_clean = String.replace(replace, " ", " ")
 
     with {:ok, content} <- Ella.Sandbox.read(path) do
       content_clean = String.replace(content, "\u00A0", " ")
@@ -53,11 +64,6 @@ defmodule Ella.Tools.ApplyPatch do
              "Include more surrounding context to make it unique."}
       end
     end
-  end
-
-  # Fallback для випадків, якщо аргументи пришли у нетиповому форматі
-  def execute(args) do
-    {:error, "Invalid arguments passed to apply_patch: #{inspect(args)}"}
   end
 
   defp count_occurrences(haystack, needle) do

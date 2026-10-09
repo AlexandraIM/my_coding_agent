@@ -26,11 +26,11 @@ erl_crash.dump
 .DS_Store
 
 # Локальна конфігурація Ella (MCP-сервери).
-# Навички з .ella/skills/ навпаки комітяться — вони частина проєкту.
+# Навички (.ella/skills/) і конфіг проєкту (.ella/config.json) — частина
+# репозиторію, решта (.ella/mcp.json) — локальна.
 /.ella/*
 !/.ella/skills/
-/.ella/skills/*
-!/.ella/skills/*.md
+!/.ella/config.json
 burrito_out/
 
 # Локальні налаштування редактора/агента

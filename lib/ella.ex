@@ -3,7 +3,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /usage, /context, /skills, /mcp <executable> <args>, /exit"
+      "Commands: /plan, /build, /usage, /context, /skills, /protected, /mcp <executable> <args>, /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -48,6 +48,25 @@ defmodule Ella do
     _ -> Owl.IO.puts("Skills are not available.")
   end
 
+  defp print_protected do
+    config = Ella.Config.load()
+    paths = Ella.Config.protected_paths(config)
+
+    Owl.IO.puts([
+      Owl.Data.tag("Protected paths: ", :cyan),
+      "#{length(paths)}",
+      "\nApproval required: #{Ella.Config.require_approval?(config)}"
+    ])
+
+    Enum.each(paths, fn path -> Owl.IO.puts("  #{path}") end)
+
+    if paths == [] do
+      Owl.IO.puts("Add them to .ella/config.json under \"protected_paths\" to enable.")
+    end
+  rescue
+    _ -> Owl.IO.puts("Protected paths are not available.")
+  end
+
   defp loop(pid) do
     input = Owl.IO.input(label: "You") |> String.trim()
 
@@ -65,6 +84,10 @@ defmodule Ella do
 
       input == "/skills" ->
         print_skills(pid)
+        loop(pid)
+
+      input == "/protected" ->
+        print_protected()
         loop(pid)
 
       input == "/plan" ->
