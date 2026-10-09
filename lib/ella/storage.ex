@@ -53,19 +53,4 @@ defmodule Ella.Storage do
 
     File.write!(mcp_file, Jason.encode!(new_config, pretty: true))
   end
-
-  @doc "Завантаження всіх скілів із папки skills/"
-  def load_skills do
-    ensure_storage_created!()
-    skills_dir = Path.join(base_dir(), "skills")
-
-    skills_dir
-    |> File.ls!()
-    |> Enum.filter(&String.ends_with?(&1, ".json"))
-    |> Enum.map(fn file ->
-      path = Path.join(skills_dir, file)
-      {:ok, content} = File.read(path)
-      Jason.decode!(content)
-    end)
-  end
 end

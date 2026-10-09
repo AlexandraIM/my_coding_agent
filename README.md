@@ -37,6 +37,33 @@ Ella is equipped with a powerful set of tools to interact with the environment:
 ### Extensions
 
 - `MCP Tools`: Dynamically loaded tools provided by connected MCP servers. Tools that do not declare `readOnlyHint` are hidden in Plan Mode.
+- `load_skill`: Reads the full text of a project skill (see below).
+
+## Skills
+
+Skills are Markdown files with YAML-style frontmatter that add project-specific
+instructions — how tests are run, which style to follow, which commands are safe.
+They live in `.ella/skills/` (committed with the repository) or `~/.ella/skills/`
+(personal). A project skill with the same name overrides a personal one.
+
+```markdown
+---
+name: Running tests
+description: How to run the test suite in this project
+tools: [read_file, system_exec]   # optional: restricts the agent
+---
+Run the full suite with `mix test`. Always run it after changing code in `lib/`.
+```
+
+Only `description` is required. `name` defaults to the file name.
+
+**Progressive disclosure.** Just the name and description go into the system
+prompt; the body is loaded on demand via `load_skill`. Keeping every skill in the
+prompt permanently would cost as much context as the instructions themselves.
+
+**Tool restrictions.** `tools:` limits what the agent can use while the skill is
+active. The restriction applies to the current request and lifts on the next one,
+so it cannot leak into unrelated work. `/skills` lists what was found.
 
 ### Safety
 
@@ -62,6 +89,7 @@ Ella.start_cli()
 | `/execute` | Immediately switch to **Build Mode** and execute the current goal |
 | `/usage` | Show tokens and cost consumed this session |
 | `/context` | Show current context size against the budget |
+| `/skills` | List discovered project skills |
 | `/mcp <executable> <args>` | Register an MCP server |
 | `/exit` | Terminate the session |
 

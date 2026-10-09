@@ -2,7 +2,9 @@ defmodule Ella do
   def start_cli do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
-    Owl.IO.puts("Commands: /plan, /build, /usage, /context, /mcp <executable> <args>, /exit")
+    Owl.IO.puts(
+      "Commands: /plan, /build, /usage, /context, /skills, /mcp <executable> <args>, /exit"
+    )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
     loop(pid)
@@ -30,6 +32,22 @@ defmodule Ella do
     _ -> Owl.IO.puts("Context info is not available.")
   end
 
+  defp print_skills(pid) do
+    case Ella.Agent.skills(pid) do
+      [] ->
+        Owl.IO.puts("No skills found. Add .md files to .ella/skills/ or ~/.ella/skills/.")
+
+      skills ->
+        Owl.IO.puts(Owl.Data.tag("Project skills:", :cyan))
+
+        Enum.each(skills, fn {name, description} ->
+          Owl.IO.puts("  #{name}: #{description}")
+        end)
+    end
+  rescue
+    _ -> Owl.IO.puts("Skills are not available.")
+  end
+
   defp loop(pid) do
     input = Owl.IO.input(label: "You") |> String.trim()
 
@@ -43,6 +61,10 @@ defmodule Ella do
 
       input == "/context" ->
         print_context(pid)
+        loop(pid)
+
+      input == "/skills" ->
+        print_skills(pid)
         loop(pid)
 
       input == "/plan" ->

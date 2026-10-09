@@ -62,6 +62,104 @@ defmodule Ella.AgentTest do
     end
   end
 
+  describe "skills" do
+    setup do
+      root =
+        Path.join(System.tmp_dir!(), "ella_agent_skills_#{System.unique_integer([:positive])}")
+
+      skills_dir = Path.join(root, ".ella/skills")
+      File.mkdir_p!(skills_dir)
+
+      File.write!(Path.join(skills_dir, "testing.md"), """
+      ---
+      name: Testing
+      description: How tests are written in this project
+      tools: [read_file, system_exec]
+      ---
+      Run the suite with `mix test`.
+      """)
+
+      previous = Application.get_env(:ella, :sandbox_root)
+      Application.put_env(:ella, :sandbox_root, root)
+
+      on_exit(fn ->
+        File.rm_rf(root)
+
+        if is_nil(previous) do
+          Application.delete_env(:ella, :sandbox_root)
+        else
+          Application.put_env(:ella, :sandbox_root, previous)
+        end
+      end)
+
+      {:ok, root: root}
+    end
+
+    test "завантажує навички з .ella/skills при старті" do
+      {:ok, pid} = Agent.start_link()
+
+      assert [{"Testing", description}] = Agent.skills(pid)
+      assert description =~ "How tests are written"
+
+      GenServer.stop(pid)
+    end
+
+    test "каталог навичок потрапляє в системний промпт" do
+      {:ok, pid} = Agent.start_link()
+      [system | _] = :sys.get_state(pid).messages
+
+      assert system["content"] =~ "PROJECT SKILLS"
+      assert system["content"] =~ "Testing"
+      assert system["content"] =~ "How tests are written"
+      # Повний текст навички в промпт не потрапляє.
+      assert system["content"] =~ "load_skill"
+      refute system["content"] =~ "Run the suite with"
+
+      GenServer.stop(pid)
+    end
+
+    test "load_skill активує навичку і повертає її інструкції" do
+      {:ok, pid} = Agent.start_link()
+
+      assert Agent.active_skill(pid) == nil
+
+      assert {:ok, skill} = GenServer.call(pid, {:activate_skill, "Testing"})
+      assert skill.instructions =~ "Run the suite with"
+      assert Agent.active_skill(pid) == "Testing"
+
+      GenServer.stop(pid)
+    end
+
+    test "перемикання режиму не знімає активну навичку" do
+      {:ok, pid} = Agent.start_link()
+      GenServer.call(pid, {:activate_skill, "Testing"})
+      Agent.set_mode(pid, :build)
+
+      assert Agent.active_skill(pid) == "Testing"
+
+      GenServer.stop(pid)
+    end
+
+    test "reload_skills скидає активну навичку" do
+      {:ok, pid} = Agent.start_link()
+      GenServer.call(pid, {:activate_skill, "Testing"})
+
+      assert ["Testing"] = Agent.reload_skills(pid)
+      assert Agent.active_skill(pid) == nil
+
+      GenServer.stop(pid)
+    end
+
+    test "невідома навичка не активується" do
+      {:ok, pid} = Agent.start_link()
+
+      assert {:error, _} = GenServer.call(pid, {:activate_skill, "Nope"})
+      assert Agent.active_skill(pid) == nil
+
+      GenServer.stop(pid)
+    end
+  end
+
   describe "context_info/1" do
     test "повертає кількість повідомлень і бюджет" do
       {:ok, pid} = Agent.start_link(context_budget: 9_000)

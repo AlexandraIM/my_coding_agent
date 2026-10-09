@@ -60,11 +60,17 @@ defmodule Ella.Agent do
         Ella.Tools.WriteFile,
         Ella.Tools.ApplyPatch,
         Ella.Tools.SystemExec,
-        Ella.Tools.DelegateTask
+        Ella.Tools.DelegateTask,
+        Ella.Tools.LoadSkill
       ])
 
     llm_opts = Keyword.get(opts, :llm_opts, [])
     project_rules = ProjectRules.load_rules()
+    skills = Ella.Skills.load_all()
+
+    if skills != [] do
+      Owl.IO.puts(Owl.Data.tag("Loaded #{length(skills)} project skill(s)", :magenta))
+    end
 
     context_opts =
       Keyword.take(opts, [
@@ -83,6 +89,8 @@ defmodule Ella.Agent do
       mcp_tools: [],
       llm_opts: llm_opts,
       project_rules: project_rules,
+      skills: skills,
+      active_skill: nil,
       context_opts: context_opts,
       usage: Ella.Llm.Usage.empty(),
       max_iterations: Keyword.get(opts, :max_iterations, Tool.max_iterations())
@@ -162,8 +170,45 @@ defmodule Ella.Agent do
   end
 
   @impl true
+  def handle_call(:reload_skills, _from, state) do
+    skills = Ella.Skills.load_all()
+    new_state = %{state | skills: skills, active_skill: nil} |> update_system_prompt()
+    publish_context(new_state)
+
+    Owl.IO.puts(Owl.Data.tag("Reloaded #{length(skills)} project skill(s)", :magenta))
+    {:reply, Enum.map(skills, & &1.name), new_state}
+  end
+
+  @impl true
+  def handle_call(:skills, _from, state) do
+    {:reply, Enum.map(state.skills, &{&1.name, &1.description}), state}
+  end
+
+  @impl true
+  def handle_call(:active_skill, _from, state) do
+    {:reply, state.active_skill && state.active_skill.name, state}
+  end
+
+  @impl true
+  def handle_call({:activate_skill, name}, _from, state) do
+    case Ella.Skills.find(state.skills, name) do
+      {:ok, skill} ->
+        new_state = %{state | active_skill: skill}
+        publish_context(new_state)
+        {:reply, {:ok, skill}, new_state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
   def handle_call({:ask, user_prompt}, _from, state) do
     Owl.IO.puts([Owl.Data.tag("User: ", :green), user_prompt])
+
+    # Нова задача — нові правила: обмеження навички з минулого
+    # запиту більше не діють.
+    state = %{state | active_skill: nil} |> tap(&publish_context/1)
 
     new_messages = state.messages ++ [%{"role" => "user", "content" => user_prompt}]
     active_tools = get_active_tools(state)
@@ -182,9 +227,10 @@ defmodule Ella.Agent do
   # У plan mode агент може читати й шукати, але не може змінювати стан.
   # system_exec тут свідомо відсутній: через шелл можна і писати
   # (`> file`), і видаляти.
-  @plan_mode_tools ~w(read_file grep glob list_dir delegate_task)
+  @plan_mode_tools ~w(read_file grep glob list_dir delegate_task load_skill)
 
-  defp get_active_tools(%{mode: :plan, all_tools: tools, mcp_tools: mcp_tools}) do
+  defp get_active_tools(%{mode: :plan} = state) do
+    %{all_tools: tools, mcp_tools: mcp_tools} = state
     plan_local = Enum.filter(tools, fn tool -> tool.name() in @plan_mode_tools end)
 
     # MCP-інструменти додаються в plan mode лише тоді, коли сервер
@@ -202,12 +248,37 @@ defmodule Ella.Agent do
       )
     end
 
-    plan_local ++ plan_mcp
+    (plan_local ++ plan_mcp)
+    |> apply_skill_restriction(state)
   end
 
-  defp get_active_tools(%{mode: :build, all_tools: tools, mcp_tools: mcp_tools}) do
-    tools ++ mcp_tools
+  defp get_active_tools(%{mode: :build} = state) do
+    (state.all_tools ++ state.mcp_tools)
+    |> apply_skill_restriction(state)
   end
+
+  # Активна навичка може звузити набір інструментів: наприклад,
+  # «лише аналіз, нічого не змінюй». Це обмеження діє до кінця
+  # поточного запиту користувача.
+  defp apply_skill_restriction(tools, %{active_skill: nil}), do: tools
+
+  defp apply_skill_restriction(tools, %{active_skill: skill}) do
+    Enum.filter(tools, fn tool -> Ella.Skills.allows?(skill, tool_name(tool)) end)
+    |> ensure_load_skill()
+  end
+
+  # Навичку можна завантажити завжди — інакше агент, що працює за
+  # нею, не зміг би зняти обмеження.
+  defp ensure_load_skill(tools) do
+    if Enum.any?(tools, &(tool_name(&1) == "load_skill")) do
+      tools
+    else
+      tools ++ [Ella.Tools.LoadSkill]
+    end
+  end
+
+  defp tool_name(%{name: name}), do: name
+  defp tool_name(module) when is_atom(module), do: module.name()
 
   def build_tool_schemas(active_tools) do
     Enum.map(active_tools, fn
@@ -240,7 +311,7 @@ defmodule Ella.Agent do
       4. Output your plan in clean Markdown with numbered steps.
       5. Ask the user if they agree with the plan before proceeding to Build Mode.
       6. Always respond to the user in the language they used (e.g., Ukrainian).
-      """ <> state.project_rules
+      """ <> state.project_rules <> skills_catalog(state)
 
     set_system_message(state, prompt)
   end
@@ -257,10 +328,12 @@ defmodule Ella.Agent do
       2. Prefer precise edits using `apply_patch` instead of overwriting files.
       3. Run checks/tests via `system_exec` after edits.
       4. Always respond to the user in the language they used (e.g., Ukrainian).
-      """ <> state.project_rules
+      """ <> state.project_rules <> skills_catalog(state)
 
     set_system_message(state, prompt)
   end
+
+  defp skills_catalog(state), do: Ella.Skills.catalog(state.skills)
 
   # Інструменти виконуються у процесі агента, а DelegateTask потребує
   # знати поточний режим і налаштування LLM. Process dictionary — найпростіший
@@ -268,7 +341,25 @@ defmodule Ella.Agent do
   defp publish_context(state) do
     Process.put(:ella_agent_mode, state.mode)
     Process.put(:ella_agent_llm_opts, state.llm_opts)
+    Process.put(:ella_agent_skills, state.skills)
   end
+
+  @doc """
+  Перечитує навички з диска та повертає їхні назви.
+  """
+  def reload_skills(pid) do
+    GenServer.call(pid, :reload_skills)
+  end
+
+  @doc """
+  Список доступних навичок (назва та опис).
+  """
+  def skills(pid), do: GenServer.call(pid, :skills)
+
+  @doc """
+  Назва навички, що обмежує інструменти в поточному кроці, або nil.
+  """
+  def active_skill(pid), do: GenServer.call(pid, :active_skill)
 
   defp set_system_message(state, prompt) do
     filtered_messages = Enum.reject(state.messages, fn m -> m["role"] == "system" end)
@@ -418,6 +509,15 @@ defmodule Ella.Agent do
     end)
   end
 
+  # Інструмент працює у процесі агента, тому може оновити стан
+  # напряму. Повертає nil, якщо це не load_skill, і виклик іде
+  # далі звичайним шляхом.
+  defp activate_skill("load_skill", %{"name" => name}) when is_binary(name) do
+    GenServer.call(self(), {:activate_skill, name})
+  end
+
+  defp activate_skill(_tool_name, _args), do: nil
+
   defp build_tool_map(tools) do
     Enum.into(tools, %{}, fn
       %{name: name} = mcp_tool -> {name, mcp_tool}
@@ -430,7 +530,7 @@ defmodule Ella.Agent do
 
     case Tool.parse_args(encoded) do
       {:ok, tool_args} ->
-        execute_tool(tool_name, tool_args, tool_map)
+        activate_skill(tool_name, tool_args) || execute_tool(tool_name, tool_args, tool_map)
 
       {:error, reason} ->
         "ERROR: #{reason}"
