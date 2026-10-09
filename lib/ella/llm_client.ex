@@ -1,35 +1,189 @@
 defmodule Ella.LlmClient do
-  @doc """
-  Entry point for LLM client, handles chat completion requests.
+  @moduledoc """
+  Точка входу до LLM: вибір адаптера, конфігурація, повтори при
+  тимчасових помилках і облік токенів.
+
+  Повтори — тут, а не в агенті, бо агент працює синхронно через
+  GenServer і не має підходячого місця для очікування.
   """
 
+  alias Ella.Llm.{Error, Usage}
+
+  @default_max_attempts 4
+  @base_delay_ms 500
+  @max_delay_ms 30_000
+
+  @doc """
+  Виконує chat completion з повторами при тимчасових помилках.
+
+  Опції `llm_opts` розширено:
+    * `:adapter`, `:config` — як раніше
+    * `:max_attempts` — скільки спроб загалом (за замовчуванням 4)
+    * `:retry_delay_fn` — fun(attempt) -> мілісекунди, для тестів
+    * `:on_retry` — fun(attempt, error, delay) для логування
+    * `:sleep_fn` — fun(ms), для тестів
+
+  Повертає {:ok, message, usage} або {:error, Error.t()}.
+  """
   def chat_completion(messages, tools, opts \\ []) do
-    adapter = Keyword.get(opts, :adapter, default_adapter())
-    config = Keyword.get(opts, :config, default_config_for(adapter))
+    # Keyword.get/3 обчислює значення за замовчуванням завжди, тому
+    # config беремо через fetch: інакше default_config_for викликався б
+    # навіть із переданим config і падав би на кастомних адаптерах.
+    adapter = Keyword.get_lazy(opts, :adapter, &default_adapter/0)
 
-    Owl.IO.puts(Owl.Data.tag("--- [LLM REQUEST START] ---", :magenta))
-    Owl.IO.puts([Owl.Data.tag("Adapter: ", :cyan), inspect(adapter)])
-    Owl.IO.puts([Owl.Data.tag("Config: ", :cyan), inspect(config)])
+    config =
+      case Keyword.fetch(opts, :config) do
+        {:ok, given} -> given
+        :error -> default_config_for(adapter)
+      end
 
-    case adapter.chat_completion(messages, tools, config) do
-      {:ok, response} = result ->
-        Owl.IO.puts(Owl.Data.tag("--- [LLM RESPONSE SUCCESS] ---", :green))
-        Owl.IO.puts(inspect(response, pretty: true, limit: :infinity))
-        result
+    max_attempts = Keyword.get(opts, :max_attempts, @default_max_attempts)
+    sleep_fn = Keyword.get(opts, :sleep_fn, &Process.sleep/1)
+    retry_delay_fn = Keyword.get(opts, :retry_delay_fn, &backoff/1)
+    on_retry = Keyword.get(opts, :on_retry, &default_on_retry/3)
+    verbose = Keyword.get(opts, :verbose, false)
 
-      {:error, reason} = result ->
-        Owl.IO.puts(Owl.Data.tag("--- [LLM RESPONSE ERROR] ---", :red))
-        Owl.IO.puts(inspect(reason, pretty: true, limit: :infinity))
-        result
+    attempt(
+      adapter,
+      config,
+      messages,
+      tools,
+      1,
+      max_attempts,
+      sleep_fn,
+      retry_delay_fn,
+      on_retry,
+      verbose
+    )
+  end
+
+  defp attempt(
+         adapter,
+         config,
+         messages,
+         tools,
+         n,
+         max_attempts,
+         sleep_fn,
+         retry_delay_fn,
+         on_retry,
+         verbose
+       ) do
+    if verbose do
+      Owl.IO.puts(Owl.Data.tag("--- [LLM REQUEST START] ---", :magenta))
+      Owl.IO.puts([Owl.Data.tag("Adapter: ", :cyan), inspect(adapter)])
+      Owl.IO.puts([Owl.Data.tag("Config: ", :cyan), inspect(redact(config))])
     end
+
+    result = adapter.chat_completion(messages, tools, config)
+
+    case result do
+      {:ok, message, usage} ->
+        if verbose do
+          Owl.IO.puts(Owl.Data.tag("--- [LLM RESPONSE SUCCESS] ---", :green))
+          Owl.IO.puts([Owl.Data.tag("Tokens: ", :cyan), Usage.format(usage || Usage.empty())])
+        end
+
+        {:ok, message, usage || estimated_usage(messages)}
+
+      {:ok, message} ->
+        # Адаптер не повернув usage — оцінюємо приблизно.
+        {:ok, message, estimated_usage(messages)}
+
+      {:error, error} ->
+        error = normalize(error)
+
+        cond do
+          not Error.retryable?(error) ->
+            {:error, error}
+
+          n >= max_attempts ->
+            {:error, error}
+
+          true ->
+            delay = delay_for(error, retry_delay_fn, n)
+            on_retry.(n, error, delay)
+
+            if verbose do
+              Owl.IO.puts(Owl.Data.tag("Retry #{n}/#{max_attempts} in #{delay}ms", :yellow))
+            end
+
+            sleep_fn.(delay)
+
+            attempt(
+              adapter,
+              config,
+              messages,
+              tools,
+              n + 1,
+              max_attempts,
+              sleep_fn,
+              retry_delay_fn,
+              on_retry,
+              verbose
+            )
+        end
+    end
+  end
+
+  # Retry-After від сервера має пріоритет над власним backoff.
+  defp delay_for(%Error{retry_after_ms: ms}, _retry_delay_fn, _n) when is_integer(ms) do
+    min(ms, @max_delay_ms)
+  end
+
+  defp delay_for(_error, retry_delay_fn, n), do: retry_delay_fn.(n)
+
+  @doc """
+  Експоненційний backoff із jitter.
+
+  Jitter потрібен, щоб паралельні запити не синхронно впиралися в
+  той самий rate limit.
+  """
+  def backoff(attempt) do
+    base = @base_delay_ms * Integer.pow(2, max(attempt - 1, 0))
+    jitter = :rand.uniform(min(base, 1_000))
+    min(base + jitter, @max_delay_ms)
+  end
+
+  defp default_on_retry(attempt, error, delay) do
+    Owl.IO.puts([
+      Owl.Data.tag("[LLM retry #{attempt}] ", :yellow),
+      Owl.Data.tag(Error.message(error), :red),
+      Owl.Data.tag(" — waiting #{delay}ms", :yellow)
+    ])
+  end
+
+  defp normalize(%Error{} = error), do: error
+
+  # Адаптери, повертающие просто текст (зокрема старий код і тести).
+  defp normalize(reason) when is_binary(reason) do
+    if Error.retryable?(reason), do: Error.transient(reason), else: Error.permanent(reason)
+  end
+
+  defp normalize(reason), do: Error.permanent(inspect(reason))
+
+  defp estimated_usage(messages) do
+    prompt_tokens =
+      messages
+      |> Enum.map(&message_text/1)
+      |> Enum.map(&Usage.estimate/1)
+      |> Enum.sum()
+
+    %Usage{prompt_tokens: prompt_tokens, completion_tokens: 0}
+  end
+
+  defp message_text(%{} = message), do: message_text(Map.get(message, "content"))
+  defp message_text(text) when is_binary(text), do: text
+  defp message_text(_), do: ""
+
+  # Не виводимо ключі у лог.
+  defp redact(config) do
+    Keyword.replace(config, :api_key, "[redacted]")
   end
 
   defp default_adapter do
     case System.get_env("LLM_PROVIDER") do
       "poolside" -> Ella.Llm.Adapters.Poolside
-      "mistral" -> Ella.Llm.Adapters.OpenAI
-      "opencode" -> Ella.Llm.Adapters.OpenAI
-      "ollama" -> Ella.Llm.Adapters.OpenAI
       _ -> Ella.Llm.Adapters.OpenAI
     end
   end
@@ -75,4 +229,8 @@ defmodule Ella.LlmClient do
       model: System.get_env("LLM_MODEL") || "poolside-code"
     ]
   end
+
+  # Кастомні адаптери отримують порожній конфіг: все необхідне вони
+  # мають передати самі через :config.
+  defp default_config_for(_other_adapter), do: []
 end

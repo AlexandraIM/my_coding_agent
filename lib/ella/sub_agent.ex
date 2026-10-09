@@ -106,7 +106,7 @@ defmodule Ella.SubAgent do
 
   defp run_loop(messages, state, current_iter) do
     case LlmClient.chat_completion(messages, state.tools, state.llm_opts) do
-      {:ok, %{"tool_calls" => tool_calls} = message}
+      {:ok, %{"tool_calls" => tool_calls} = message, _usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
         updated_messages = messages ++ [message]
 
@@ -126,11 +126,14 @@ defmodule Ella.SubAgent do
 
         run_loop(updated_messages ++ tool_results_messages, state, current_iter + 1)
 
-      {:ok, %{"content" => content}} ->
+      {:ok, %{"content" => content}, _usage} ->
         {:ok, content || "Task completed."}
 
+      {:ok, _message, _usage} ->
+        {:ok, "Task completed."}
+
       {:error, reason} ->
-        {:error, reason}
+        {:error, Ella.Llm.Error.message(reason)}
     end
   end
 

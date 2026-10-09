@@ -1,13 +1,20 @@
 defmodule Ella.Llm.Adapter do
-  @doc """
-  Behaviour for all LLM-adapters
+  @moduledoc """
+  Behaviour для всіх LLM-адаптерів.
+
+  `chat_completion/3` повертає {:ok, message, usage} або
+  {:error, Ella.Llm.Error.t()}. Структурована помилка потрібна, щоб
+  клієнт міг відрізнити rate limit від помилки авторизації і вирішити,
+  чи варто повторювати запит.
   """
 
-  @type message :: map()
-  @type tool_schema :: map()
-  @type config :: keyword()
-  @type responce :: {:ok, message()} | {:error, String.t()}
+  alias Ella.Llm.{Error, Usage}
 
-  @callback chat_completion(messages :: [message()], tools :: [tool_schema()], config :: config()) ::
-              responce()
+  @type message :: map()
+  @type tool :: atom() | map()
+  @type config :: keyword()
+  @type response :: {:ok, message(), Usage.t() | nil} | {:error, Error.t()}
+
+  @callback chat_completion(messages :: [message()], tools :: [tool()], config :: config()) ::
+              response()
 end

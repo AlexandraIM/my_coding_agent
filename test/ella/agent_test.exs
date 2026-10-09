@@ -43,6 +43,53 @@ defmodule Ella.AgentTest do
 
       GenServer.stop(pid)
     end
+
+    test "context_opts зберігаються у стані" do
+      {:ok, pid} = Agent.start_link(context_budget: 5_000, keep_recent: 3)
+      state = :sys.get_state(pid)
+
+      assert state.context_opts[:context_budget] == 5_000
+      assert state.context_opts[:keep_recent] == 3
+
+      GenServer.stop(pid)
+    end
+
+    test "облік токенів стартує з нуля" do
+      {:ok, pid} = Agent.start_link()
+      refute Ella.Llm.Usage.known?(Agent.usage(pid))
+
+      GenServer.stop(pid)
+    end
+  end
+
+  describe "context_info/1" do
+    test "повертає кількість повідомлень і бюджет" do
+      {:ok, pid} = Agent.start_link(context_budget: 9_000)
+      info = Agent.context_info(pid)
+
+      assert info.messages == 1
+      assert info.budget == 9_000
+      assert is_integer(info.estimated_tokens)
+
+      GenServer.stop(pid)
+    end
+  end
+
+  describe "reset_usage/1" do
+    test "скидає накопичений облік" do
+      {:ok, pid} = Agent.start_link()
+
+      :sys.replace_state(pid, fn state ->
+        %{state | usage: %Ella.Llm.Usage{prompt_tokens: 500, completion_tokens: 100}}
+      end)
+
+      assert Agent.usage(pid).prompt_tokens == 500
+
+      Agent.reset_usage(pid)
+      refute Ella.Llm.Usage.known?(Agent.usage(pid))
+
+      GenServer.stop(pid)
+    end
   end
 
   describe "build_tool_schemas/1" do

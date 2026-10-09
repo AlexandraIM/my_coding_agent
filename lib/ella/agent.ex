@@ -13,6 +13,9 @@ defmodule Ella.Agent do
     GenServer.start_link(__MODULE__, opts)
   end
 
+  # :infinity тут свідомо: поки агент працює, користувач не може
+  # нічого ввести, а передчасний timeout обривав би корисну роботу.
+  # Див. обмеження ітерацій run_loop — воно реально обмежує тривалість.
   def ask(pid, user_prompt) do
     GenServer.call(pid, {:ask, user_prompt}, :infinity)
   end
@@ -21,10 +24,24 @@ defmodule Ella.Agent do
     GenServer.call(pid, {:set_mode, mode})
   end
 
-  @doc "Реєстрація нового MCP-сервера в агента"
-  def register_mcp(pid, executable, args) do
-    GenServer.call(pid, {:register_mcp, executable, args}, :infinity)
+  @doc """
+  Реєстрація нового MCP-сервера в агента.
+
+  На відміну від `ask/2` має таймаут: запуск зовнішнього процесу не
+  повинен зависати назавжди, якщо сервер мовчить у відповідь.
+  """
+  def register_mcp(pid, executable, args, timeout \\ 60_000) do
+    GenServer.call(pid, {:register_mcp, executable, args}, timeout)
   end
+
+  @doc "Повертає накопичений облік токенів і вартості за сесію."
+  def usage(pid), do: GenServer.call(pid, :usage)
+
+  @doc "Скидає облік токенів."
+  def reset_usage(pid), do: GenServer.call(pid, :reset_usage)
+
+  @doc "Кількість повідомлень у поточній історії та їх орієнтовний розмір."
+  def context_info(pid), do: GenServer.call(pid, :context_info)
 
   # --- Server Callbacks ---
 
@@ -49,6 +66,15 @@ defmodule Ella.Agent do
     llm_opts = Keyword.get(opts, :llm_opts, [])
     project_rules = ProjectRules.load_rules()
 
+    context_opts =
+      Keyword.take(opts, [
+        :context_budget,
+        :max_context_tokens,
+        :keep_recent,
+        :max_tool_result_chars,
+        :summary_max_entries
+      ])
+
     state = %{
       mode: mode,
       messages: [],
@@ -57,6 +83,8 @@ defmodule Ella.Agent do
       mcp_tools: [],
       llm_opts: llm_opts,
       project_rules: project_rules,
+      context_opts: context_opts,
+      usage: Ella.Llm.Usage.empty(),
       max_iterations: Keyword.get(opts, :max_iterations, Tool.max_iterations())
     }
 
@@ -113,6 +141,27 @@ defmodule Ella.Agent do
   end
 
   @impl true
+  def handle_call(:usage, _from, state) do
+    {:reply, state.usage, state}
+  end
+
+  @impl true
+  def handle_call(:reset_usage, _from, state) do
+    {:reply, :ok, %{state | usage: Ella.Llm.Usage.empty()}}
+  end
+
+  @impl true
+  def handle_call(:context_info, _from, state) do
+    info = %{
+      messages: length(state.messages),
+      estimated_tokens: Ella.Context.estimate(state.messages),
+      budget: Ella.Context.budget(state.context_opts)
+    }
+
+    {:reply, info, state}
+  end
+
+  @impl true
   def handle_call({:ask, user_prompt}, _from, state) do
     Owl.IO.puts([Owl.Data.tag("User: ", :green), user_prompt])
 
@@ -120,11 +169,11 @@ defmodule Ella.Agent do
     active_tools = get_active_tools(state)
 
     case run_loop(new_messages, active_tools, state, 0) do
-      {:ok, final_messages, response_text} ->
-        {:reply, {:ok, response_text}, %{state | messages: final_messages}}
+      {:ok, final_messages, response_text, usage} ->
+        {:reply, {:ok, response_text}, %{state | messages: final_messages, usage: usage}}
 
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
+      {:error, reason, usage} ->
+        {:reply, {:error, Ella.Llm.Error.message(reason)}, %{state | usage: usage}}
     end
   end
 
@@ -235,17 +284,69 @@ defmodule Ella.Agent do
         "Stopping the loop and returning control to the user."
 
     Owl.IO.puts(Owl.Data.tag(notice, :yellow))
-    {:ok, notice}
+    {:ok, notice, state.usage}
   end
 
   defp run_loop(messages, active_tools, state, current_iter) do
     tool_map = build_tool_map(active_tools)
     Owl.IO.puts(Owl.Data.tag("Thinking (#{state.mode} mode)...", :cyan))
 
-    case LlmClient.chat_completion(messages, active_tools, state.llm_opts) do
-      {:ok, %{"tool_calls" => tool_calls} = message}
+    prepared = prepare_context(messages, state)
+
+    case prepared do
+      {:error, reason} ->
+        {:error, reason, state.usage}
+
+      {:ok, context_messages} ->
+        continue_loop(context_messages, messages, active_tools, tool_map, state, current_iter)
+    end
+  end
+
+  # Стискаємо історію перед запитом, щоб вона не перевищила вікно.
+  # Повертаємо also початкові повідомлення: якщо стискання неможливе,
+  # краще дати помилку зрозумілою, ніж відправити запит, який API відхилить.
+  defp prepare_context(messages, state) do
+    case Ella.Context.compact(messages, state.context_opts) do
+      {:ok, compacted} ->
+        if compacted != messages do
+          before = Ella.Context.estimate(messages)
+          after_compact = Ella.Context.estimate(compacted)
+
+          Owl.IO.puts(
+            Owl.Data.tag(
+              "[context] compacted #{before} -> #{after_compact} tokens " <>
+                "(#{length(messages)} -> #{length(compacted)} messages)",
+              :yellow
+            )
+          )
+        end
+
+        {:ok, compacted}
+
+      {:error, :too_large} ->
+        {:error,
+         Ella.Llm.Error.permanent(
+           "Conversation exceeds the context budget even after compaction " <>
+             "(#{Ella.Context.estimate(messages)} tokens, budget " <>
+             "#{Ella.Context.budget(state.context_opts)}). " <>
+             "Start a new session to continue."
+         )}
+    end
+  end
+
+  defp continue_loop(
+         context_messages,
+         original_messages,
+         active_tools,
+         tool_map,
+         state,
+         current_iter
+       ) do
+    case LlmClient.chat_completion(context_messages, active_tools, state.llm_opts) do
+      {:ok, %{"tool_calls" => tool_calls} = message, usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
-        updated_messages = messages ++ [message]
+        state = %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
+        updated_messages = original_messages ++ [message]
 
         tool_results_messages =
           Enum.map(tool_calls, fn call ->
@@ -262,20 +363,28 @@ defmodule Ella.Agent do
             %{"role" => "tool", "tool_call_id" => call_id, "content" => result_text}
           end)
 
-        run_loop(updated_messages ++ tool_results_messages, active_tools, state, current_iter + 1)
+        run_loop(
+          updated_messages ++ tool_results_messages,
+          active_tools,
+          state,
+          current_iter + 1
+        )
 
-      {:ok, %{"content" => content} = message} when not is_nil(content) and content != "" ->
+      {:ok, %{"content" => content} = message, usage}
+      when not is_nil(content) and content != "" ->
+        state = %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
         Owl.IO.puts([Owl.Data.tag("Agent: ", :blue), content])
-        {:ok, messages ++ [message], content}
+        {:ok, original_messages ++ [message], content, state.usage}
 
-      {:ok, message} ->
+      {:ok, message, usage} ->
+        state = %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
         content = message["content"] || "Done."
         Owl.IO.puts([Owl.Data.tag("Agent: ", :blue), content])
-        {:ok, messages ++ [message], content}
+        {:ok, original_messages ++ [message], content, state.usage}
 
       {:error, reason} ->
-        Owl.IO.puts(Owl.Data.tag("Error calling LLM: #{inspect(reason)}", :red))
-        {:error, reason}
+        Owl.IO.puts(Owl.Data.tag("Error calling LLM: #{Ella.Llm.Error.message(reason)}", :red))
+        {:error, reason, state.usage}
     end
   end
 

@@ -60,7 +60,20 @@ Ella.start_cli()
 | `/plan` | Switch to **Plan Mode** (Read-only architectural design) |
 | `/build` | Switch to **Build Mode** (Full access for implementation) |
 | `/execute` | Immediately switch to **Build Mode** and execute the current goal |
-| `exit` | Terminate the session |
+| `/usage` | Show tokens and cost consumed this session |
+| `/context` | Show current context size against the budget |
+| `/mcp <executable> <args>` | Register an MCP server |
+| `/exit` | Terminate the session |
+
+### Reliability
+
+Transient LLM failures (429, 5xx, network) are retried with exponential backoff and jitter,
+up to four attempts, honouring `Retry-After` when the server sends it. Permanent failures
+(401, malformed requests) fail immediately rather than burning retries.
+
+Conversation history is compacted before each request once it approaches the context budget:
+older messages collapse into a summary, and long tool results are truncated. When even that
+cannot fit, the agent reports the problem instead of sending a request the API will reject.
 
 ## Typical Workflow
 

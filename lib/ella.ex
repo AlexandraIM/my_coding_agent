@@ -2,12 +2,32 @@ defmodule Ella do
   def start_cli do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
-    Owl.IO.puts(
-      "Commands: /plan (Switch to Plan Mode), /build (Switch to Build Mode), /mcp <npx/uvx/exec> <args> exit"
-    )
+    Owl.IO.puts("Commands: /plan, /build, /usage, /context, /mcp <executable> <args>, /exit")
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
     loop(pid)
+  end
+
+  defp print_usage(pid) do
+    usage = Ella.Agent.usage(pid)
+
+    Owl.IO.puts([
+      Owl.Data.tag("Usage this session: ", :cyan),
+      Ella.Llm.Usage.format(usage)
+    ])
+  rescue
+    _ -> Owl.IO.puts("Usage is not available.")
+  end
+
+  defp print_context(pid) do
+    info = Ella.Agent.context_info(pid)
+
+    Owl.IO.puts([
+      Owl.Data.tag("Context: ", :cyan),
+      "#{info.messages} messages, ~#{info.estimated_tokens} of #{info.budget} tokens"
+    ])
+  rescue
+    _ -> Owl.IO.puts("Context info is not available.")
   end
 
   defp loop(pid) do
@@ -16,6 +36,14 @@ defmodule Ella do
     cond do
       input == "/exit" ->
         Owl.IO.puts("Бувай, повертайся!")
+
+      input == "/usage" ->
+        print_usage(pid)
+        loop(pid)
+
+      input == "/context" ->
+        print_context(pid)
+        loop(pid)
 
       input == "/plan" ->
         Ella.Agent.set_mode(pid, :plan)
