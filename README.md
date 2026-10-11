@@ -32,7 +32,7 @@ Ella is equipped with a powerful set of tools to interact with the environment:
 ### Execution (Build Mode only)
 
 - `system_exec`: Executes terminal commands through a shell (pipes, `&&`, redirection supported), with a timeout and output truncation.
-- `delegate_task`: Spawns autonomous sub-agents to handle isolated sub-tasks.
+- `delegate_task`: Spawns autonomous sub-agents to handle isolated sub-tasks (research, fixing, testing). This allows the primary agent to maintain focus while complex components are handled in parallel or in isolation.
 
 ### Extensions
 
@@ -112,13 +112,18 @@ so it cannot leak into unrelated work. `/skills` lists what was found.
 
 ### Safety
 
-All file access is confined to the project root: absolute paths, `..` traversal, and symlinks
-pointing outside the project are rejected. Commands that would destroy state irreversibly
-(`rm`, `sudo`, `git reset --hard`, ...) are blocked and must be run by the user directly.
+All file access is managed by a **Sandbox** (`Ella.Sandbox`). This ensures that the agent cannot escape the project root:
+- Absolute paths are rejected.
+- Path traversal via `..` is blocked.
+- Symbolic links pointing outside the project root are detected and rejected.
 
-**Undo.** Every file the agent modifies is copied aside before the first change, so `/rewind`
-restores it; files the agent created are deleted. This works without git and does not touch
-uncommitted work of yours.
+Commands that would destroy state irreversibly (`rm`, `sudo`, `git reset --hard`, ...) are blocked and must be run by the user directly.
+
+**Undo.** Ella uses a **Snapshot** mechanism (`Ella.Snapshot`) rather than relying on git. Before a file is modified for the first time in a session, a backup is created. When you run `/rewind`:
+- Modified files are restored to their original state.
+- Files created by the agent during the session are deleted.
+
+This ensures a precise rollback without touching your uncommitted work or requiring a git repository.
 
 ## Quick Start Guide
 
@@ -184,8 +189,8 @@ The recommended workflow for using Ella is as follows:
 
 1. **Plan**: Start in `/plan` mode. Describe the feature or bug. The agent analyzes the code and proposes a detailed design.
 2. **Approve**: Review the proposed plan. Request adjustments if necessary.
-3. **Build**: Switch to `/build` mode. The agent implements the changes based on the approved plan.
-4. **Verify**: The agent uses `SystemExec` to run tests and verify that the implementation is correct.
+3. **Build**: Switch to `/build` mode. The agent implements the changes. For complex tasks, it may delegate specific sub-problems to autonomous sub-agents to maintain efficiency.
+4. **Verify**: The agent uses `system_exec` to run tests and verify that the implementation is correct.
 
 ## Customization
 
