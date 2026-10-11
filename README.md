@@ -125,6 +125,120 @@ Commands that would destroy state irreversibly (`rm`, `sudo`, `git reset --hard`
 
 This ensures a precise rollback without touching your uncommitted work or requiring a git repository.
 
+## Installation
+
+### Prerequisites
+
+| Requirement | Minimum | Why |
+|---|---|---|
+| **Erlang/OTP** | 26+ (29+ recommended) | Runtime for the escript binary |
+| **Elixir** | 1.20+ | Build tool (`mix`) and source compilation |
+| **Git** | any | Snapshot backups and project detection |
+| **ripgrep** (optional) | any | Speeds up `grep` tool — falls back to built-in walker if missing |
+
+### macOS (Homebrew)
+
+```sh
+# Erlang + Elixir (same formula pulls both)
+brew install elixir
+
+# Optional: faster search
+brew install ripgrep
+
+# Clone and build
+git clone <repo-url>
+cd my_coding_agent
+mix deps.get
+mix escript.build   # produces ./ella
+```
+
+### Linux (apt)
+
+```sh
+# Elixir (includes Erlang/OTP)
+sudo apt update
+sudo apt install -y curl gnupg
+curl -fsSL https://packages.elixir-lang.org/elastic/elixir/elixir.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/elixir-archive-keyring.gpg
+echo "deb https://packages.elixir-lang.org/elastic/elixir ubuntu-main stable" | sudo tee /etc/apt/sources.list.d/elixir.list
+sudo apt update
+sudo apt install -y elixir
+
+# Optional
+sudo apt install -y ripgrep
+
+git clone <repo-url>
+cd my_coding_agent
+mix deps.get
+mix escript.build
+```
+
+### Windows (Scoop)
+
+```powershell
+scoop install elixir
+scoop install ripgrep
+
+git clone <repo-url>
+cd my_coding_agent
+mix deps.get
+mix escript.build
+```
+
+> **Tip:** On all platforms, `kiex` or `asdf` can pin exact Elixir/OTP versions per-project.
+
+### API Key
+
+Ella needs an LLM provider. Set the environment variable for your chosen provider:
+
+**OpenAI** (default):
+```sh
+export OPENAI_API_KEY="sk-..."
+```
+
+**Poolside:**
+```sh
+export LLM_PROVIDER=poolside
+export POOLSIDE_API_KEY="..."
+```
+
+**Mistral:**
+```sh
+export LLM_PROVIDER=mistral
+export MISTRAL_API_KEY="..."
+```
+
+**Ollama** (local):
+```sh
+export LLM_PROVIDER=ollama
+export LLM_MODEL="gemma4:31b-cloud"  # optional, see defaults below
+```
+
+**OpenCode-compatible** (local):
+```sh
+export LLM_PROVIDER=opencode
+export OPENCODE_API_KEY="..."        # optional, "free" by default
+export OPENCODE_BASE_URL="http://localhost:4096/v1"  # optional
+```
+
+The model defaults to `gpt-4o` (OpenAI), `poolside-code` (Poolside), `codestral-latest` (Mistral), `gemma4:31b-cloud` (Ollama). Override with `LLM_MODEL`.
+
+### Running
+
+After building:
+
+```sh
+./ella              # interactive CLI — needs a real terminal (TTY)
+```
+
+Or without building a binary:
+
+```sh
+iex -S mix
+iex> Ella.start_cli()
+```
+
+The CLI is interactive — it will not work when piped into `head` or run from a non-TTY script.
+
 ## Quick Start Guide
 
 ### Running from source
