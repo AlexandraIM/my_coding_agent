@@ -11,7 +11,7 @@ defmodule Ella.WriteGuard do
   запису оригіналу вже немає.
   """
 
-  alias Ella.{Approve, Config, Snapshot}
+  alias Ella.{Approve, Config, FileSystem, Snapshot}
 
   @doc """
   Чи можна змінювати `path`.
@@ -22,6 +22,8 @@ defmodule Ella.WriteGuard do
   def check(path, tool_name) do
     with :ok <- approve(path, tool_name) do
       Snapshot.record_write(path)
+      # Скидаємо кеш файлової системи, щоб пошук після запису бачив нові файли.
+      FileSystem.invalidate()
       :ok
     end
   end

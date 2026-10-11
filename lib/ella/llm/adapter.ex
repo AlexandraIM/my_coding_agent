@@ -30,4 +30,6 @@ defmodule Ella.Llm.Adapter do
               config :: config(),
               on_text :: on_text()
             ) :: response()
+
+  @optional_callbacks [chat_completion_stream: 4]
 end

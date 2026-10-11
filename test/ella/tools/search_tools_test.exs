@@ -240,4 +240,45 @@ defmodule Ella.Tools.SearchToolsTest do
       assert output =~ "Run the agent."
     end
   end
+
+  describe "кешування файлової системи" do
+    test "ignored_dirs кешує результат" do
+      # Перший виклик — читає з диска
+      map1 = Ella.FileSystem.ignored_dirs()
+      assert is_map(map1)
+
+      # Другий виклик — повертає з кешу (та сама мапа)
+      map2 = Ella.FileSystem.ignored_dirs()
+      assert map1 == map2
+    end
+
+    test "invalidate митить кеш після запису" do
+      # Записуємо новий файл — WriteGuard.check має інвалідувати кеш
+      Ella.Tools.WriteFile.execute(%{"path" => "new_module.ex", "content" => "def new_module do\nend\n"})
+
+      # Новий файл повинен з'явитися у пошуку після інвалідації
+      assert {:ok, output} = Grep.execute(%{"pattern" => "new_module"})
+      assert output =~ "new_module.ex"
+    end
+
+    test "walk_files кешує результат для однакових опцій" do
+      root = Ella.Sandbox.root()
+      abs_root = Path.expand(root)
+
+      files1 = Ella.FileSystem.walk_files(abs_root)
+      files2 = Ella.FileSystem.walk_files(abs_root)
+
+      assert files1 == files2
+    end
+
+    test "walk_files не кешує з кастомними include" do
+      root = Ella.Sandbox.root()
+      abs_root = Path.expand(root)
+
+      custom_include = fn path -> String.ends_with?(path, ".ex") end
+
+      files = Ella.FileSystem.walk_files(abs_root, include: custom_include)
+      refute Enum.any?(files, &(not String.ends_with?(&1, ".ex")))
+    end
+  end
 end

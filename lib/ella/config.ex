@@ -8,6 +8,7 @@ defmodule Ella.Config do
 
       {
         "protected_paths": ["mix.exs", "mix.lock", ".github/"],
+        "disallowed_patterns": ["bash\\s+-c", "rm\\s+-rf"],
         "require_approval": true
       }
 
@@ -22,6 +23,7 @@ defmodule Ella.Config do
   # нічого не захищати без явного рішення.
   @default %{
     "protected_paths" => [],
+    "disallowed_patterns" => [],
     "require_approval" => true
   }
 
@@ -62,6 +64,19 @@ defmodule Ella.Config do
     |> List.wrap()
     |> Enum.map(&String.trim/1)
     |> Enum.reject(&(&1 == ""))
+  end
+
+  @doc """
+  Список regex-паттернів, які блокуються у `system_exec`.
+
+  Кожен паттерн компілюється як Regex і перевіряється проти
+  повного рядка команди та кожного сегмента після розбору
+  ланцюжка (`;`, `&`, `|`).
+  """
+  def disallowed_patterns(config \\ load()) do
+    config
+    |> Map.get("disallowed_patterns", [])
+    |> List.wrap()
   end
 
   @doc """

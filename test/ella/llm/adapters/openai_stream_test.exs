@@ -199,7 +199,7 @@ defmodule Ella.Llm.Adapters.OpenAI.StreamTest do
 
     test "потік без зупинки повертає повний текст" do
       chunks =
-        Enum.map(1..5, fn i ->
+        Enum.map(1..5, fn _i ->
           Jason.encode!(%{"choices" => [%{"delta" => %{"content" => "x"}}]})
         end)
 

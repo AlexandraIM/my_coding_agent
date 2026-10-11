@@ -135,5 +135,71 @@ defmodule Ella.Tools.FileToolsTest do
                  "replace" => "x"
                })
     end
+
+    test "fuzzy fallback: збіг з відносними відступами" do
+      WriteFile.execute(%{
+        "path" => "indent.ex",
+        "content" => "defmodule Foo do\n  def bar do\n    :baz\n  end\nend\n"
+      })
+
+      # search має 0-indent, а файл — 2-space
+      assert {:ok, _} =
+               ApplyPatch.execute(%{
+                 "path" => "indent.ex",
+                 "search" => "def bar do\n  :baz\nend",
+                 "replace" => "def bar do\n  :qux\nend"
+               })
+
+      assert read_back("indent.ex") == "defmodule Foo do\n  def bar do\n    :qux\n  end\nend\n"
+    end
+
+    test "fuzzy fallback: ігнорує trailing whitespace у файлі" do
+      WriteFile.execute(%{
+        "path" => "trail.ex",
+        "content" => "one   \ntwo\nthree\n"
+      })
+
+      assert {:ok, _} =
+               ApplyPatch.execute(%{
+                 "path" => "trail.ex",
+                 "search" => "one",
+                 "replace" => "ONE"
+               })
+
+      assert read_back("trail.ex") =~ "ONE"
+    end
+
+    test "формат SEARCH/REPLACE block" do
+      WriteFile.execute(%{
+        "path" => "block.ex",
+        "content" => "defmodule Foo do\n  :bar\nend\n"
+      })
+
+      assert {:ok, _} =
+               ApplyPatch.execute(%{
+                 "path" => "block.ex",
+                 "search" => "<<<<< SEARCH\n  :bar\n======\n  :baz\n>>>>>>\n",
+                 "replace" => "ignored"
+               })
+
+      assert read_back("block.ex") == "defmodule Foo do\n  :baz\nend\n"
+    end
+
+    test "формат SEARCH/REPLACE block: кілька блоків послідовно" do
+      WriteFile.execute(%{
+        "path" => "multi.ex",
+        "content" => "a\nb\nc\nd\n"
+      })
+
+      assert {:ok, _} =
+               ApplyPatch.execute(%{
+                 "path" => "multi.ex",
+                 "search" =>
+                   "<<<<< SEARCH\na\n======\nAA\n>>>>>>\n<<<<< SEARCH\nd\n======\nDD\n>>>>>>\n",
+                 "replace" => "ignored"
+               })
+
+      assert read_back("multi.ex") == "AA\nb\nc\nDD\n"
+    end
   end
 end

@@ -1,4 +1,5 @@
 {
   "protected_paths": ["mix.exs", "mix.lock", ".formatter.exs", ".github/"],
+  "disallowed_patterns": [],
   "require_approval": true
 }

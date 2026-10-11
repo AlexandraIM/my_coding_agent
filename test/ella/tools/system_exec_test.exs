@@ -96,4 +96,87 @@ defmodule Ella.Tools.SystemExecTest do
       assert {:ok, _} = SystemExec.execute(%{"command" => ""})
     end
   end
+
+  describe "блокування інтерпреторів" do
+    test "блокує bash -c з rm" do
+      assert {:error, reason} =
+               SystemExec.execute(%{"command" => "bash -c \"rm -rf /tmp\""})
+
+      assert reason =~ "denied command"
+      assert reason =~ "rm"
+    end
+
+    test "дозволяє bash -c з безпечними командами" do
+      assert {:ok, output} =
+               SystemExec.execute(%{"command" => "bash -c 'echo from_bash'"})
+
+      assert output =~ "from_bash"
+    end
+
+    test "блокує sh -c з mkfs" do
+      assert {:error, reason} =
+               SystemExec.execute(%{"command" => "sh -c 'mkfs.ext4 /dev/null'"})
+
+      assert reason =~ "mkfs"
+    end
+
+    test "блокує python3 -c з rm (через check_interpreter_bypass)" do
+      # `;` всередині Python рядка розбиває сегмент, але
+      # check_interpreter_bypass перевіряє повну команду.
+      assert {:error, reason} =
+               SystemExec.execute(%{"command" => "python3 -c 'import os; os.system(\"rm\")'"})
+
+      assert reason =~ "rm"
+    end
+  end
+
+  describe "disallowed_patterns з конфігу" do
+    setup do
+      root =
+        Path.join(System.tmp_dir!(), "ella_exec_cfg_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(Path.join(root, ".ella"))
+
+      previous_root = Application.get_env(:ella, :sandbox_root)
+      previous_cfg = Application.get_env(:ella, :load_project_config)
+      Application.put_env(:ella, :sandbox_root, root)
+      Application.put_env(:ella, :load_project_config, true)
+
+      File.write!(Path.join(root, ".ella/config.json"),
+        Jason.encode!(%{
+          "protected_paths" => [],
+          "disallowed_patterns" => ["curl\\s+http", "wget\\s"],
+          "require_approval" => true
+        }))
+
+      on_exit(fn ->
+        File.rm_rf(root)
+
+        if is_nil(previous_root) do
+          Application.delete_env(:ella, :sandbox_root)
+        else
+          Application.put_env(:ella, :sandbox_root, previous_root)
+        end
+
+        if is_nil(previous_cfg) do
+          Application.delete_env(:ella, :load_project_config)
+        else
+          Application.put_env(:ella, :load_project_config, previous_cfg)
+        end
+      end)
+
+      :ok
+    end
+
+    test "блокує за disallowed_patterns" do
+      assert {:error, reason} =
+               SystemExec.execute(%{"command" => "curl http://evil.example.com"})
+
+      assert reason =~ "disallowed pattern"
+    end
+
+    test "дозволяє команди без збігів з disallowed_patterns" do
+      assert {:ok, _} = SystemExec.execute(%{"command" => "echo safe_command"})
+    end
+  end
 end

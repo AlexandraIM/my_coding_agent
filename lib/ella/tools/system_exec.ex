@@ -11,6 +11,13 @@ defmodule Ella.Tools.SystemExec do
     sudo su doas launchctl systemctl killall
   )
 
+  # Інтерпретори, які можуть обійти чорний список через -c / -e / -p.
+  # При їх використанні перевіряємо аргументи на згадки заборонених команд.
+  @denied_interpreters ~w(
+    bash sh dash zsh ksh
+    python python3 perl ruby node php
+  )
+
   # Підкоманди, які ламають git-стан без можливості відкотитись.
   @denied_git_subcommands ~w(reset clean filter-branch push force)
 
@@ -93,25 +100,68 @@ defmodule Ella.Tools.SystemExec do
     end
   end
 
-  # Перевіряємо перший токен кожного сегмента ланцюга, щоб `ls && rm -rf`
-  # не пройшов повз перевірку тільки першої команди.
+  # Спочатку перевіряємо весь рядок команди проти конфіг-паттернів,
+  # потім — кожен сегмент після розбору ланцюжка команд.
   defp check_allowed(command) do
-    command
-    |> split_segments()
-    |> Enum.reduce_while(:ok, fn segment, :ok ->
-      case first_token(segment) do
-        nil ->
-          {:cont, :ok}
+    case check_disallowed_patterns(command) do
+      {:error, _} = error ->
+        error
 
-        cmd ->
-          case check_command(cmd, segment) do
-            :ok -> {:cont, :ok}
-            {:error, _} = error -> {:halt, error}
-          end
-      end
-    end)
+      :ok ->
+        segments = split_segments(command)
+
+        result =
+          Enum.reduce_while(segments, :ok, fn segment, _acc ->
+            case first_token(segment) do
+              nil ->
+                {:cont, :ok}
+
+              cmd ->
+                case check_command(cmd, segment) do
+                  :ok -> {:cont, :ok}
+                  {:error, _} = error -> {:halt, error}
+                end
+            end
+          end)
+
+        # Другий прохід: якщо жоден сегмент не пройшов перевірку, але
+        # серед сегментів є інтерпретор (bash, python, ...), додатково
+        # перевіряємо ВСІй рядок команди на заборонені токени. Це ловить
+        # випадки, де `;` всередині рядка розбиває команду на сегменти
+        # (наприклад, `python3 -c 'import os; os.system("rm")'`).
+        case result do
+          :ok -> check_interpreter_bypass(command, segments)
+          {:error, _} = error -> error
+        end
+    end
   end
 
+  # Колад інтерпретор використовується в будь-якому сегменті, перевіряємо
+  # повну команду на наявність заборонених команд.
+  defp check_interpreter_bypass(command, segments) do
+    has_interpreter =
+      Enum.any?(segments, fn seg ->
+        case first_token(seg) do
+          nil -> false
+          cmd -> Path.basename(cmd) in @denied_interpreters
+        end
+      end)
+
+    if has_interpreter do
+      Enum.find(@denied_commands, fn denied ->
+        Regex.match?(~r/\b#{Regex.escape(denied)}\b/, command)
+      end)
+      |> case do
+        nil -> :ok
+        found -> {:error, "Interpreter invocation with denied command '#{found}' detected. Ask the user to run it manually."}
+      end
+    else
+      :ok
+    end
+  end
+
+  # Перевіряємо перший токен кожного сегмента ланцюга, щоб `ls && rm -rf`
+  # не пройшов повз перевірку тільки першої команди.
   defp split_segments(command) do
     command
     |> String.split(~r/[;&|]+/)
@@ -131,14 +181,57 @@ defmodule Ella.Tools.SystemExec do
          "Command '#{cmd}' is blocked by the agent's safety policy. " <>
            "Ask the user to run it manually."}
 
+      base in @denied_interpreters ->
+        check_interpreter(cmd, segment)
+
       base == "git" and destructive_git?(segment) ->
         {:error,
          "Destructive git command blocked: '#{segment}'. " <>
            "Use 'git status'/'git diff' to inspect state, and let the user handle resets."}
 
       true ->
-        :ok
+        check_disallowed_patterns(segment)
     end
+  end
+
+  # Перевіряємо, чі містять аргументи інтерпретора заборонені команди.
+  # Це блокує обхід типу `bash -c "rm -rf /"` чи `python -c "import os; os.system('rm')"`.
+  defp check_interpreter(cmd, segment) do
+    tokens = segment |> String.split(~r/\s+/, trim: true)
+    args = Enum.drop(tokens, 1) |> Enum.join(" ")
+
+    found =
+      Enum.find(@denied_commands, fn denied ->
+        Regex.match?(~r/\b#{Regex.escape(denied)}\b/, args)
+      end)
+
+    if found do
+      {:error,
+       "Interpreter '#{cmd}' with denied command '#{found}' detected in arguments. " <>
+         "Ask the user to run it manually."}
+    else
+      check_disallowed_patterns(segment)
+    end
+  end
+
+  # Перевіряє текст проти regex-паттернів із конфігу (`.ella/config.json`).
+  # Повертає {:error, reason} або :ok.
+  defp check_disallowed_patterns(text) do
+    patterns = Ella.Config.disallowed_patterns()
+
+    Enum.find_value(patterns, :ok, fn pattern ->
+      case Regex.compile(pattern) do
+        {:ok, regex} ->
+          if Regex.match?(regex, text) do
+            {:error, "Command matches disallowed pattern: #{pattern}"}
+          else
+            nil
+          end
+
+        {:error, _} ->
+          nil
+      end
+    end)
   end
 
   defp destructive_git?(segment) do

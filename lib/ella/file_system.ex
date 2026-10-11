@@ -6,6 +6,13 @@ defmodule Ella.FileSystem do
   sandbox, приховані каталоги (`deps`, `_build`, `.git`) і правила
   `.gitignore`. Без цього `Grep` і `Glob` заганяли б у контекст моделі
   десятки тисяч рядків стороннього коду.
+
+  Результати кешуються в ETS-таблицю `:ella_fs_cache`:
+
+  * `ignored_dirs/0` — кешується з урахуванням mtime `.gitignore`;
+  * `walk_files/2` — кешується з урахуванням mtime каталогу.
+
+  Кеш можна мити `invalidate/0` після запису файлу.
   """
 
   alias Ella.Sandbox
@@ -23,20 +30,56 @@ defmodule Ella.FileSystem do
   # на відміну від .git чи _build.
   @visible_dotfiles ~w(.formatter.exs .env.example .env.local .tool-versions)
 
+  @table :ella_fs_cache
+
   @doc "Каталоги, які завжди пропускаються при обході."
   def default_ignored, do: @default_ignored
 
   @doc """
-  Повертає мауnd-map «абсолютний каталог -> true» з урахуванням
+  Митить кеш файлової системи.
+
+  Викликається автоматично при `WriteGuard.check/2` після запису файлу,
+  щоб наступний пошук не повернув застарілі дані.
+  """
+  @spec invalidate() :: :ok
+  def invalidate do
+    ensure_table()
+    :ets.delete_all_objects(@table)
+    :ok
+  end
+
+  @doc """
+  Повертає mаp «абсолютний каталог -> true» з урахуванням
   `.gitignore` у корені проєкту.
 
   `.gitignore` розбирається спрощено: підтримуються коментарі й точні
-  імена каталогів. Шаблони з `*` ігні��оруються — вимагати повної
+  імена каталогів. Шаблони з `*` ігноруються — вимагати повної
   реалізації gitignore тут зайво, це лише оптимізація пошуку.
+
+  Результат кешується в ETS; кеш інвалідується автоматично, коли
+  mtime `.gitignore` змінюється, і вручну через `invalidate/0`
+  після запису файлу.
   """
   def ignored_dirs do
-    gitignore_path = Path.join(Sandbox.root(), ".gitignore")
+    root = Sandbox.root()
+    ensure_table()
+    key = {:ignored, root}
 
+    gitignore_path = Path.join(root, ".gitignore")
+    mtime = mtime_of(gitignore_path)
+
+    case :ets.lookup(@table, key) do
+      [{^key, ^mtime, ignored_map}] ->
+        ignored_map
+
+      _ ->
+        result = compute_ignored(root, gitignore_path)
+        :ets.insert(@table, {key, mtime, result})
+        result
+    end
+  end
+
+  defp compute_ignored(root, gitignore_path) do
     from_gitignore =
       case File.read(gitignore_path) do
         {:ok, content} -> gitignore_patterns(content)
@@ -45,7 +88,7 @@ defmodule Ella.FileSystem do
 
     (@default_ignored ++ from_gitignore)
     |> Enum.uniq()
-    |> Map.new(&{Path.join(Sandbox.root(), &1), true})
+    |> Map.new(&{Path.join(root, &1), true})
   end
 
   @doc "Чи заборонено заходити в директорію."
@@ -60,20 +103,41 @@ defmodule Ella.FileSystem do
     * `:depth` — максимальна глибина відносно `absolute_dir`
     * `:include` — функція `abs_path -> boolean`
     * `:limit` — максимум файлів
-    * `:ignored` — мауnd-map з `ignored_dirs/0`
+    * `:ignored` — мaп з `ignored_dirs/0`
 
   Повертає список абсолютних шляхів до файлів.
+
+  Результат кешується в ETS для випадків, коли не передані
+  індивідуальні `:include` або `:ignored`. Кеш інвалідується за
+  mtime каталогу або через `invalidate/0`.
   """
   def walk_files(absolute_dir, opts \\ []) do
+    ensure_table()
+
     depth = Keyword.get(opts, :depth, @max_depth)
     include = Keyword.get(opts, :include, fn _ -> true end)
     limit = Keyword.get(opts, :limit, @max_files)
     ignored_map = Keyword.get_lazy(opts, :ignored, &ignored_dirs/0)
 
-    {files, _remaining} =
-      collect(absolute_dir, depth, include, ignored_map, limit, [])
+    # Не кешуємо, коли передані кастомні :include або :ignored.
+    if Keyword.has_key?(opts, :include) or Keyword.has_key?(opts, :ignored) do
+      {files, _remaining} = collect(absolute_dir, depth, include, ignored_map, limit, [])
+      Enum.reverse(files)
+    else
+      cache_key = {:walk, absolute_dir, depth, limit}
+      dir_mtime = mtime_of(absolute_dir)
 
-    Enum.reverse(files)
+      case :ets.lookup(@table, cache_key) do
+        [{^cache_key, ^dir_mtime, files}] ->
+          files
+
+        _ ->
+          {files, _remaining} = collect(absolute_dir, depth, include, ignored_map, limit, [])
+          files = Enum.reverse(files)
+          :ets.insert(@table, {cache_key, dir_mtime, files})
+          files
+      end
+    end
   end
 
   defp collect(_dir, depth, _include, _ignored, limit, acc) when depth < 0 or limit <= 0 do
@@ -132,5 +196,20 @@ defmodule Ella.FileSystem do
       |> String.trim_leading("/")
     end)
     |> Enum.reject(&(&1 == "" or String.contains?(&1, "*")))
+  end
+
+  # --- ETS cache helpers ---
+
+  defp ensure_table do
+    if :ets.info(@table) == :undefined do
+      :ets.new(@table, [:set, :public, :named_table])
+    end
+  end
+
+  defp mtime_of(path) do
+    case File.stat(path, time: :posix) do
+      {:ok, %File.Stat{mtime: mtime}} -> mtime
+      {:error, _} -> 0
+    end
   end
 end
