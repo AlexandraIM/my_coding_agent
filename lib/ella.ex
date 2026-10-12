@@ -26,7 +26,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /usage, /context, /skills, /protected, /rewind, /mcp <executable> <args>, /exit"
+      "Commands: /plan, /build, /usage, /context, /skills, /protected, /limits, /rewind, /mcp <executable> <args>, /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -90,6 +90,19 @@ defmodule Ella do
     _ -> Owl.IO.puts("Protected paths are not available.")
   end
 
+  defp print_limits do
+    config = Ella.Config.load()
+
+    Owl.IO.puts(Owl.Data.tag("Session limits (from .ella/config.json):", :cyan))
+
+    Owl.IO.puts("  attempts per LLM call: #{Ella.Config.max_attempts(config)}")
+    Owl.IO.puts("  request timeout: #{div(Ella.Config.request_timeout_ms(config), 1_000)}s")
+    Owl.IO.puts("  context budget: #{Ella.Config.context_budget(config)} tokens")
+    Owl.IO.puts("  max iterations: #{Ella.Config.max_iterations(config)}")
+  rescue
+    _ -> Owl.IO.puts("Session limits are not available.")
+  end
+
   defp print_rewind do
     case Ella.Snapshot.rewind() do
       {:ok, %{restored: restored, removed: removed}} ->
@@ -136,6 +149,10 @@ defmodule Ella do
 
       input == "/protected" ->
         print_protected()
+        loop(pid)
+
+      input == "/limits" ->
+        print_limits()
         loop(pid)
 
       input == "/rewind" ->

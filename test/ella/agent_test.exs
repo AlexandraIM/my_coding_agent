@@ -39,7 +39,21 @@ defmodule Ella.AgentTest do
 
     test "llm_opts зберігаються у стані" do
       {:ok, pid} = Agent.start_link(llm_opts: [adapter: Ella.Llm.Adapters.Poolside])
-      assert :sys.get_state(pid).llm_opts == [adapter: Ella.Llm.Adapters.Poolside]
+      llm_opts = :sys.get_state(pid).llm_opts
+
+      assert llm_opts[:adapter] == Ella.Llm.Adapters.Poolside
+
+      GenServer.stop(pid)
+    end
+
+    test "max_attempts береться з конфігу, якщо не заданий явно" do
+      {:ok, pid} = Agent.start_link()
+      assert :sys.get_state(pid).llm_opts[:max_attempts] == Ella.Config.max_attempts()
+
+      GenServer.stop(pid)
+
+      {:ok, pid} = Agent.start_link(llm_opts: [max_attempts: 2])
+      assert :sys.get_state(pid).llm_opts[:max_attempts] == 2
 
       GenServer.stop(pid)
     end
@@ -50,6 +64,13 @@ defmodule Ella.AgentTest do
 
       assert state.context_opts[:context_budget] == 5_000
       assert state.context_opts[:keep_recent] == 3
+
+      GenServer.stop(pid)
+    end
+
+    test "бюджет контексту за замовчуванням береться з конфігу" do
+      {:ok, pid} = Agent.start_link()
+      assert :sys.get_state(pid).context_opts[:context_budget] == Ella.Config.context_budget()
 
       GenServer.stop(pid)
     end

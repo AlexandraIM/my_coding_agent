@@ -4,6 +4,8 @@ Ella is an AI-powered coding assistant built in Elixir. It utilizes an agentic l
 
 ## Key Features
 
+For a detailed visual overview of how the system is structured, see [ella_architecture.html](./ella_architecture.html).
+
 The agent operates in two distinct modes to ensure safety and architectural integrity:
 
 - **Plan Mode**: A read-only mode used for exploration, analysis, and architectural design. In this mode, the agent can read files and execute certain commands but cannot modify the codebase.
@@ -57,6 +59,30 @@ A rule ending in `/` covers everything inside that directory. `/protected` shows
 A prompt nobody can answer would hang the run, so the agent is told to ask you instead.
 Set `require_approval` to `false` to allow the change with a warning printed instead.
 
+## Session limits
+
+The same `.ella/config.json` sets the boundaries of a session. These are project properties, not
+agent internals, so each repository can pick its own trade-off between cost and patience:
+
+```json
+{
+  "max_attempts": 4,
+  "request_timeout_ms": 120000,
+  "context_budget": 120000,
+  "max_iterations": 30
+}
+```
+
+| Key | Meaning | Default |
+| :--- | :--- | :--- |
+| `max_attempts` | Total attempts per LLM call, including the first | `4` |
+| `request_timeout_ms` | How long to wait for the provider before giving up | `120000` |
+| `context_budget` | Token budget for conversation history before compaction kicks in | `120000` |
+| `max_iterations` | Agent steps (tool calls) allowed per user request | `30` |
+
+Non-integer or non-positive values are ignored and the default is used instead — a typo in the
+config should not leave the agent without limits.
+
 ## Skills
 
 Skills are Markdown files with YAML-style frontmatter that add project-specific
@@ -82,8 +108,7 @@ prompt permanently would cost as much context as the instructions themselves.
 ### Writing your own
 
 A skill is the place to put what the agent cannot infer from the code: how to
-verify a change, which style to follow, which commands are safe. This repository
-uses `.ella/skills/verify.md`:
+verify a change, which style to follow, which commands are safe. For an Elixir project, you might use `.ella/skills/verify.md`:
 
 ```markdown
 ---
@@ -91,9 +116,9 @@ name: Verify changes
 description: How to check your work after editing code
 tools: [system_exec, read_file]
 ---
-After changing any file under `src/`, run:
+After changing any file under `lib/`, run:
 
-    npm test
+    mix test
 
 A failing test is a real problem: fix the cause, do not weaken the assertion.
 ```
@@ -278,8 +303,9 @@ piped into `head` or run from a script without a TTY.
 | `/context` | Show current context size against the budget |
 | `/skills` | List discovered project skills |
 | `/protected` | Show protected paths and whether approval is required |
+| `/limits` | Show the active session limits (attempts, timeout, budget, iterations) |
 | `/rewind` | Undo everything the agent changed this session |
-| `/mcp <executable> <args>` | Register an MCP server |
+| `/mcp [executable args]` | Register an MCP server (or show help if called without args) |
 | `/exit` | Terminate the session |
 
 ### Reliability
@@ -289,13 +315,24 @@ generated. Streaming is transparent: the assembled message and token usage are i
 non-streamed call, and an adapter without `chat_completion_stream/4` falls back to a plain
 request rather than losing its reply.
 
-Transient LLM failures (429, 5xx, network) are retried with exponential backoff and jitter,
-up to four attempts, honouring `Retry-After` when the server sends it. Permanent failures
-(401, malformed requests) fail immediately rather than burning retries.
+Transient LLM failures (429, 408, 5xx, network) are retried with exponential backoff and jitter,
+up to `max_attempts`, honouring `Retry-After` when the server sends it — in seconds or as an HTTP
+date, whichever the provider chose. Permanent failures (401, malformed requests) fail immediately
+rather than burning retries.
+
+A stream that ends without its `[DONE]` marker is treated as interrupted rather than complete: SSE
+responses carry no length, so a dropped connection is indistinguishable from a finished one if you
+only look at the transport. Retrying such a stream is safe **only** before the user has seen any
+output — afterwards a retry would print the same reply twice, so the agent reports the error instead
+of silently duplicating or truncating its answer.
 
 Conversation history is compacted before each request once it approaches the context budget:
 older messages collapse into a summary, and long tool results are truncated. When even that
 cannot fit, the agent reports the problem instead of sending a request the API will reject.
+
+Because "four characters per token" is only a rough guess, the agent calibrates its estimate
+against the real `prompt_tokens` the provider returns for each request. The ratio is smoothed and
+clamped, so a single unusual prompt cannot throw every later estimate off.
 
 ## Typical Workflow
 

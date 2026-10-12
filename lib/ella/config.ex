@@ -9,10 +9,21 @@ defmodule Ella.Config do
       {
         "protected_paths": ["mix.exs", "mix.lock", ".github/"],
         "disallowed_patterns": ["bash\\s+-c", "rm\\s+-rf"],
-        "require_approval": true
+        "require_approval": true,
+        "max_attempts": 4,
+        "request_timeout_ms": 120000,
+        "context_budget": 120000,
+        "max_iterations": 50
       }
 
   Файл опціональний: без нього захист не ввімкнено.
+
+  Ключі надійності (`max_attempts`, `request_timeout_ms`,
+  `context_budget`, `max_iterations`) не захищають проєкт, а задають межі
+  сесії: скільки разів повторювати тимчасову помилку LLM, скільки
+  чекати на відповідь, скільки токенів тримати в історії і скільки кроків
+  виконувати за один запит. За замовчуванням вони задані в @default,
+  тому проєкт може змінити лише те, що йому не підходить.
   """
 
   alias Ella.Sandbox
@@ -24,7 +35,11 @@ defmodule Ella.Config do
   @default %{
     "protected_paths" => [],
     "disallowed_patterns" => [],
-    "require_approval" => true
+    "require_approval" => true,
+    "max_attempts" => 4,
+    "request_timeout_ms" => 120_000,
+    "context_budget" => 120_000,
+    "max_iterations" => Ella.Tool.max_iterations()
   }
 
   @doc """
@@ -88,6 +103,40 @@ defmodule Ella.Config do
   def require_approval?(config \\ load()) do
     Map.get(config, "require_approval", true) != false
   end
+
+  @doc """
+  Скільки спроб виклику LLM робити, перш ніж здатися.
+
+  Значення має бути цілим > 0: конфіг проєкту не повинен уповільнювати
+  агента до безкінечності, тож некоректне значення ігнорується.
+  """
+  def max_attempts(config \\ load()) do
+    positive_int(Map.get(config, "max_attempts"), 4)
+  end
+
+  @doc """
+  Таймаут очікування відповіді LLM у мілісекундах.
+  """
+  def request_timeout_ms(config \\ load()) do
+    positive_int(Map.get(config, "request_timeout_ms"), 120_000)
+  end
+
+  @doc """
+  Бюджет історії в токенах, який стискає `Ella.Context`.
+  """
+  def context_budget(config \\ load()) do
+    positive_int(Map.get(config, "context_budget"), 120_000)
+  end
+
+  @doc """
+  Скільки кроків агент може зробити за один запит користувача.
+  """
+  def max_iterations(config \\ load()) do
+    positive_int(Map.get(config, "max_iterations"), Ella.Tool.max_iterations())
+  end
+
+  defp positive_int(value, _default) when is_integer(value) and value > 0, do: value
+  defp positive_int(_value, default), do: default
 
   @doc """
   Чи захищений шлях.

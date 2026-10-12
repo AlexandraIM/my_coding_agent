@@ -40,6 +40,9 @@ defmodule Ella.LlmClient do
         :error -> default_config_for(adapter)
       end
 
+    config =
+      Keyword.put_new_lazy(config, :request_timeout_ms, fn -> Ella.Config.request_timeout_ms() end)
+
     max_attempts = Keyword.get(opts, :max_attempts, @default_max_attempts)
     sleep_fn = Keyword.get(opts, :sleep_fn, &Process.sleep/1)
     retry_delay_fn = Keyword.get(opts, :retry_delay_fn, &backoff/1)

@@ -20,10 +20,14 @@ defmodule Ella.Llm.Adapters.Poolside do
 
     {:ok, state} =
       Agent.start_link(fn ->
-        %{buffer: "", text: "", tool_calls: [], usage: nil, halted: nil}
+        %{buffer: "", text: "", tool_calls: [], usage: nil, halted: nil, completed: false}
       end)
 
-    into = Stream.accumulator(fn event -> handle_event(event, on_text, state) end)
+    into =
+      Stream.accumulator(
+        fn event -> handle_event(event, on_text, state) end,
+        fn _ -> Agent.update(state, &%{&1 | completed: true}) end
+      )
 
     req =
       config
@@ -35,24 +39,63 @@ defmodule Ella.Llm.Adapters.Poolside do
         {:ok, %Req.Response{status: 200}} ->
           final = Agent.get(state, & &1)
 
-          case final.halted do
-            nil ->
+          cond do
+            final.halted != nil ->
+              {:error, halted_error(final.halted, final)}
+
+            not final.completed ->
+              {:error, truncated_error(final)}
+
+            true ->
               {:ok, normalize_response(%{"text" => final.text, "tool_calls" => final.tool_calls}),
                final.usage}
-
-            reason ->
-              {:error, Error.permanent("Stream halted: #{inspect(reason)}")}
           end
 
-        {:ok, %Req.Response{status: status, body: body}} ->
-          {:error, classify(status, body)}
+        {:ok, %Req.Response{status: status, body: body, headers: headers}} ->
+          {:error, classify(status, body, headers)}
 
         {:error, reason} ->
-          {:error, Error.transient("Network error: #{inspect(reason)}")}
+          {:error, network_error(reason, Agent.get(state, & &1))}
       end
 
     Agent.stop(state)
     result
+  end
+
+  # Див. OpenAI: обрив до першого фрагмента можна повторити, обрив після
+  # надрукованого тексту — ні.
+  defp truncated_error(%{text: text, tool_calls: calls}) do
+    message =
+      "Stream ended before the [DONE] marker " <>
+        "(#{String.length(text)} chars, #{length(calls)} tool call(s))"
+
+    if empty_output?(text, calls) do
+      Error.transient(message <> " (before any output)")
+    else
+      Error.permanent(message <> " (partial output already shown)")
+    end
+  end
+
+  defp empty_output?(text, calls), do: String.trim(text) == "" and calls == []
+
+  defp halted_error(reason, %{text: text, tool_calls: calls}) do
+    detail = "Stream halted: #{inspect(reason)}"
+
+    if empty_output?(text, calls) do
+      Error.transient(detail <> " (before any output)")
+    else
+      Error.permanent(detail <> " (partial output already shown)")
+    end
+  end
+
+  defp network_error(reason, %{text: text, tool_calls: calls}) do
+    message = "Network error: #{inspect(reason)}"
+
+    if empty_output?(text, calls) do
+      Error.transient(message)
+    else
+      Error.permanent(message <> " (stream interrupted after partial output)")
+    end
   end
 
   defp handle_event(event, on_text, state) do
@@ -114,7 +157,7 @@ defmodule Ella.Llm.Adapters.Poolside do
     Req.new(
       base_url: Keyword.get(config, :base_url, "https://api.poolside.ai/v1"),
       headers: [{"x-api-key", Keyword.get(config, :api_key, System.get_env("POOLSIDE_API_KEY"))}],
-      receive_timeout: 120_000
+      receive_timeout: Keyword.get(config, :request_timeout_ms) || 120_000
     )
   end
 
@@ -124,8 +167,8 @@ defmodule Ella.Llm.Adapters.Poolside do
     {:ok, normalize_response(body), usage(body)}
   end
 
-  defp handle_response({:ok, %Req.Response{status: status, body: body}}) do
-    {:error, classify(status, body)}
+  defp handle_response({:ok, %Req.Response{status: status, body: body, headers: headers}}) do
+    {:error, classify(status, body, headers)}
   end
 
   defp handle_response({:error, reason}) do
@@ -134,15 +177,28 @@ defmodule Ella.Llm.Adapters.Poolside do
 
   defp usage(body), do: body |> Usage.from_response() |> Usage.with_cost()
 
-  defp classify(429, body) do
-    Error.transient("Rate limited (429): #{inspect(body)}", status: 429)
+  defp classify(429, body, headers) do
+    Error.transient("Rate limited (429): #{inspect(body)}",
+      status: 429,
+      retry_after_ms: Ella.Llm.RetryAfter.from_headers(headers)
+    )
   end
 
-  defp classify(status, body) when status in 500..599 do
-    Error.transient("Poolside server error #{status}: #{inspect(body)}", status: status)
+  defp classify(408, body, headers) do
+    Error.transient("Request timeout (408): #{inspect(body)}",
+      status: 408,
+      retry_after_ms: Ella.Llm.RetryAfter.from_headers(headers)
+    )
   end
 
-  defp classify(status, body) do
+  defp classify(status, body, headers) when status in 500..599 do
+    Error.transient("Poolside server error #{status}: #{inspect(body)}",
+      status: status,
+      retry_after_ms: Ella.Llm.RetryAfter.from_headers(headers)
+    )
+  end
+
+  defp classify(status, body, _headers) do
     Error.permanent("Poolside API error #{status}: #{inspect(body)}", status: status)
   end
 end

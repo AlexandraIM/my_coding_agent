@@ -4,14 +4,15 @@ defmodule Ella.Llm.Adapters.OpenAI do
   alias Ella.Llm.{Error, Usage}
   alias Ella.Stream
 
-  defstruct [:buffer, :text, :tool_calls, :usage, :halted]
+  defstruct [:buffer, :text, :tool_calls, :usage, :halted, completed: false]
 
   @type t :: %__MODULE__{
           buffer: String.t() | nil,
           text: String.t() | nil,
           tool_calls: [map()],
           usage: Usage.t() | nil,
-          halted: term()
+          halted: term(),
+          completed: boolean()
         }
 
   @impl true
@@ -29,7 +30,11 @@ defmodule Ella.Llm.Adapters.OpenAI do
     model = model(config)
     {:ok, state} = Agent.start_link(fn -> new_stream_state() end)
 
-    into = Stream.accumulator(fn event -> handle_event(event, on_text, state) end)
+    into =
+      Stream.accumulator(
+        fn event -> handle_event(event, on_text, state) end,
+        fn _ -> Agent.update(state, &%{&1 | completed: true}) end
+      )
 
     req =
       config
@@ -45,22 +50,25 @@ defmodule Ella.Llm.Adapters.OpenAI do
         {:ok, %Req.Response{status: 200}} ->
           final = Agent.get(state, & &1)
 
-          # Потік було перервано: відповідь неповна, і виглядати як
+          # Потік міг обірватися: відповідь неповна, і виглядати як
           # успішна вона не повинна — інакше агент збереже обрізаний
           # текст і піде далі.
-          case final.halted do
-            nil ->
-              {:ok, finalize(final), final.usage}
+          cond do
+            final.halted != nil ->
+              {:error, halted_error(final.halted, final)}
 
-            reason ->
-              {:error, Error.permanent("Stream halted: #{inspect(reason)}")}
+            not complete?(final) ->
+              {:error, truncated_error(final)}
+
+            true ->
+              {:ok, finalize(final), final.usage}
           end
 
         {:ok, %Req.Response{status: status, body: body, headers: headers}} ->
           {:error, classify(status, body, headers)}
 
         {:error, reason} ->
-          {:error, Error.transient("Network error: #{inspect(reason)}")}
+          {:error, network_error(reason, Agent.get(state, & &1))}
       end
 
     Agent.stop(state)
@@ -68,7 +76,53 @@ defmodule Ella.Llm.Adapters.OpenAI do
   end
 
   defp new_stream_state do
-    %__MODULE__{buffer: "", text: "", tool_calls: [], usage: nil, halted: nil}
+    %__MODULE__{buffer: "", text: "", tool_calls: [], usage: nil, halted: nil, completed: false}
+  end
+
+  # Потік без маркера [DONE] обірваний: сервер не доповів відповідь
+  # до кінця, і лише виглядає, що все добре.
+  defp complete?(%__MODULE__{halted: nil, completed: true}), do: true
+  defp complete?(%__MODULE__{halted: _reason}), do: false
+  defp complete?(_state), do: false
+
+  # Обрив потоку до того, як користувач побачив хоч щось, безпечно
+  # повторюється: повтор не дублює видимого виводу. Якщо ж текст уже
+  # надруковано, повтор призвів би до двох копій відповіді в терміналі,
+  # тому такий випадок — помилка постійна.
+  defp halted_error(reason, %{text: text, tool_calls: calls}) do
+    detail = "Stream halted: #{inspect(reason)}"
+
+    if empty_output?(text, calls) do
+      Error.transient(detail <> " (before any output)")
+    else
+      Error.permanent(detail <> " (partial output already shown)")
+    end
+  end
+
+  defp empty_output?(text, calls), do: String.trim(text) == "" and calls == []
+
+  defp truncated_error(%__MODULE__{} = final) do
+    message =
+      "Stream ended before the [DONE] marker " <>
+        "(#{String.length(final.text)} chars, #{length(final.tool_calls)} tool call(s))"
+
+    if empty_output?(final.text, final.tool_calls) do
+      Error.transient(message <> " (before any output)")
+    else
+      Error.permanent(message <> " (partial output already shown)")
+    end
+  end
+
+  # Обрив з'єднання — типова тимчасова помилка, але повтор безпечний
+  # лише тоді, коли користувач ще нічого не бачив.
+  defp network_error(reason, state) do
+    message = "Network error: #{inspect(reason)}"
+
+    if empty_output?(state.text, state.tool_calls) do
+      Error.transient(message)
+    else
+      Error.permanent(message <> " (stream interrupted after partial output)")
+    end
   end
 
   # Чанк може нести або текст, або частину виклику інструмента.
@@ -191,8 +245,14 @@ defmodule Ella.Llm.Adapters.OpenAI do
          "Bearer #{Keyword.get(config, :api_key, System.get_env("LLM_API_KEY") || "")}"},
         {"content-type", "application/json"}
       ],
-      receive_timeout: 120_000
+      receive_timeout: timeout(config)
     )
+  end
+
+  # Таймаут приходить у конфіг запиту: LlmClient додає його з
+  # конфігурації проєкту, тож адаптер не читає файли сам.
+  defp timeout(config) do
+    Keyword.get(config, :request_timeout_ms) || 120_000
   end
 
   defp model(config), do: Keyword.get(config, :model, "gpt-4o")
@@ -226,6 +286,16 @@ defmodule Ella.Llm.Adapters.OpenAI do
     Error.transient("Rate limited (429): #{inspect(body)}", retry_after_ms: retry_after(headers))
   end
 
+  defp classify(408, body, headers) do
+    # 408 — сервер сам зізнався, що не дочекався запиту: це саме
+    # випадок для повтору, а не для паніки.
+    Error.transient(
+      "Request timeout (408): #{inspect(body)}",
+      status: 408,
+      retry_after_ms: retry_after(headers)
+    )
+  end
+
   defp classify(status, body, headers) when status in 500..599 do
     Error.transient(
       "Server error #{status}: #{inspect(body)}",
@@ -238,31 +308,7 @@ defmodule Ella.Llm.Adapters.OpenAI do
     Error.permanent("API error #{status}: #{inspect(body)}", status: status)
   end
 
-  # Провайдери надсилають Retry-After у секундах або як HTTP-date.
-  # У stream-відповіді Req віддає заголовки звичайною мапою, а не
-  # %Req.Response{}, тому читаємо обидва варіанти.
-  defp retry_after(%Req.Response{} = response), do: retry_after(response.headers)
-
-  defp retry_after(headers) when is_map(headers) do
-    value =
-      Enum.find_value(headers, fn
-        {"retry-after", v} -> v
-        _ -> nil
-      end)
-
-    parse_retry_after(value)
-  end
-
-  defp retry_after(_), do: nil
-
-  defp parse_retry_after(nil), do: nil
-
-  defp parse_retry_after(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {seconds, _} -> seconds * 1_000
-      :error -> nil
-    end
-  end
-
-  defp parse_retry_after(_), do: nil
+  # Retry-After уміє бути і кількістю секунд, і HTTP-датою —
+  # розбираємо обидва варіанти в одному місці.
+  defp retry_after(response), do: Ella.Llm.RetryAfter.from_headers(response)
 end

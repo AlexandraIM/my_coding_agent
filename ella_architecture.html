@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ella — Архітектура та переваги AI Coding Агента</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <!-- Mermaid.js for Diagrams -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        darkMode: true,
+        background: '#0d1117',
+        primaryColor: '#7c3aed',
+        primaryTextColor: '#f8fafc',
+        primaryBorderColor: '#a855f7',
+        lineColor: '#38bdf8',
+        secondaryColor: '#1e293b',
+        tertiaryColor: '#0f172a'
+      }
+    });
+  </script>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --accent: #8b5cf6;
+      --accent-glow: rgba(139, 92, 246, 0.25);
+      --accent-secondary: #06b6d4;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.6;
+      padding: 0 1.5rem 5rem;
+    }
+
+    header {
+      max-width: 1200px;
+      margin: 3rem auto 2rem;
+      text-align: center;
+      position: relative;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid var(--accent);
+      color: #c4b5fd;
+      padding: 0.4rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1.25rem;
+    }
+
+    h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1.15;
+      background: linear-gradient(135deg, #ffffff 30%, #a78bfa 70%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 1.2rem;
+    }
+
+    .subtitle {
+      font-size: 1.2rem;
+      color: var(--text-muted);
+      max-width: 780px;
+      margin: 0 auto;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 3.5rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1.25rem;
+      padding: 2.25rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), var(--accent-secondary), transparent);
+    }
+
+    h2 {
+      font-size: 1.85rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: #fff;
+    }
+
+    .diagram-container {
+      background: #0b0f19;
+      border: 1px solid #1e293b;
+      border-radius: 1rem;
+      padding: 1.75rem;
+      margin: 1.5rem 0;
+      overflow-x: auto;
+      display: flex;
+      justify-content: center;
+    }
+
+    /* Grid for Features and Highlights */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+
+    .feature-box {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 0.85rem;
+      padding: 1.5rem;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .feature-box:hover {
+      transform: translateY(-3px);
+      border-color: rgba(139, 92, 246, 0.4);
+      box-shadow: 0 10px 20px -5px var(--accent-glow);
+    }
+
+    .feature-icon {
+      font-size: 1.75rem;
+      margin-bottom: 0.75rem;
+      display: inline-block;
+    }
+
+    .feature-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-desc {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.55;
+    }
+
+    /* Modes showcase */
+    .mode-pill {
+      display: inline-block;
+      padding: 0.25rem 0.65rem;
+      border-radius: 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-right: 0.5rem;
+    }
+
+    .mode-plan {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
+      border: 1px solid #0284c7;
+    }
+
+    .mode-build {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid #059669;
+    }
+
+    /* Comparison Table */
+    .table-container {
+      overflow-x: auto;
+      margin-top: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid #1f2937;
+    }
+
+    th {
+      background: #0f172a;
+      color: #e2e8f0;
+      font-weight: 600;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .check {
+      color: var(--success);
+      font-weight: 700;
+    }
+
+    .cross {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.25rem;
+      font-size: 0.88em;
+      color: #e0e7ff;
+    }
+
+    footer {
+      max-width: 1200px;
+      margin: 4rem auto 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      border-top: 1px solid #1f2937;
+      padding-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="badge">⚡ Autonomous Coding Partner</div>
+    <h1>Ella: Архітектура та Можливості</h1>
+    <p class="subtitle">
+      Повноцінний автономний AI-асистент на базі Elixir/BEAM, створений для безпечної та результативної роботи безпосередньо з кодовою базою.
+    </p>
+  </header>
+
+  <main class="container">
+
+    <!-- 1. Як працює агент (Agentic Loop) -->
+    <section class="card">
+      <h2>🔄 1. Як працює агент: Основний життєвий цикл</h2>
+      <p class="feature-desc">
+        Ella реалізує автономний цикл взаємодії (Agentic Loop) на базі OTP GenServer. На відміну від звичайних чат-ботів, агент самостійно розбиває задачу на кроки, аналізує файлову систему, застосовує зміни та валідує результат.
+      </p>
+
+      <div class="diagram-container">
+        <div class="mermaid">
+          flowchart TD
+            User(["Користувач: Запит / План"]) --> Agent["Ella.Agent (GenServer)"]
+            
+            subgraph ContextMgmt ["Керування пам'яттю"]
+              Agent --> CheckBudget{"Перевірка ліміту токенів?"}
+              CheckBudget -- "Бюджет перевищено" --> ContextCompact["Ella.Context: Стиснення історії"]
+              CheckBudget -- "В межах норми" --> LLMClient["Ella.LlmClient"]
+              ContextCompact --> LLMClient
+            end
+
+            subgraph LLMExecution ["Виклик моделі"]
+              LLMClient --> Stream["Ella.Stream: SSE Стрімінг & Повтори"]
+              Stream --> Decision{"Що повернула модель?"}
+            end
+
+            Decision -- "Текстова відповідь" --> UserOutput["Owl.IO: Вивід користувачу"]
+            
+            subgraph ToolExecution ["Виконання інструментів"]
+              Decision -- "Tool Call" --> SafetyCheck{"Перевірка режиму та Sandbox"}
+              SafetyCheck -- "Plan Mode блокує запис" --> ToolError["Повернення помилки моделі"]
+              SafetyCheck -- "Build Mode дозволяє" --> WriteGuard{"Захищений файл?"}
+              
+              WriteGuard -- "Так, потребує схвалення" --> ApprovePrompt["Ella.Approve: Запит у користувача"]
+              ApprovePrompt -- "Дозволено / Ні" --> Snapshot["Ella.Snapshot: Резервна копія"]
+              WriteGuard -- "Звичайний файл" --> Snapshot
+              
+              Snapshot --> ExecTool["Виконання: WriteFile / ApplyPatch / Exec"]
+              ExecTool --> NextTurn["Результат інструменту в історію"]
+            end
+
+            NextTurn --> Agent
+            UserOutput --> WaitUserInput(["Очікування наступного вводу"])
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="feature-box">
+          <div class="feature-icon">🛡️</div>
+          <div class="feature-title">Plan vs Build Режими</div>
+          <div class="feature-desc">
+            <span class="mode-pill mode-plan">Plan</span> Тільки читання (read_file, grep, glob, list_dir). Без ризику для проєкту.<br>
+            <span class="mode-pill mode-build">Build</span> Повний доступ (write_file, apply_patch, system_exec).
+          </div>
+        </div>
+        <div class="feature-box">
+          <div class="feature-icon">🧠</div>
+          <div class="feature-title">Динамічний контекст</div>
+          <div class="feature-desc">
+            <code>Ella.Context</code> автоматично стискає старі кроки у короткі підсумки. Сесія ніколи не обривається через переповнення ліміту токенів LLM.
+          </div>
+        </div>
+        <div class="feature-box">
+          <div class="feature-icon">⏪</div>
+          <div class="feature-title">Миттєвий відкат (/rewind)</div>
+          <div class="feature-desc">
+            <code>Ella.Snapshot</code> створює точкову копію кожного зміненого файлу. Команда <code>/rewind</code> повертає стан назад без впливу на git tree.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Безпека: Багаторівневий захист -->
+    <section class="card">
+      <h2>🛡️ 2. Багаторівнева система захисту (Safety First)</h2>
+      <p class="feature-desc">
+        Головна проблема AI-асистентів — небезпека пошкодити код або запустити деструктивну команду в терміналі. В Ella реалізовано 4 лінії оборони:
+      </p>
+
+      <div class="diagram-container">
+        <div class="mermaid">
+          flowchart LR
+            Action["Дія Агента"] --> L1["Рівень 1: Sandbox"]
+            L1 -->|"Заборона '..' та симлінків поза root"| L2["Рівень 2: Режими доступу"]
+            L2 -->|"Plan Mode забороняє будь-який запис"| L3["Рівень 3: WriteGuard"]
+            L3 -->|"Захист mix.exs, lockfiles, CI"| L4["Рівень 4: Deny-List Shell"]
+            L4 -->|"Блокування rm, sudo, git reset"| SafeFS[("Безпечна файлова система")]
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="feature-box">
+          <div class="feature-title">🔒 Ella.Sandbox</div>
+          <div class="feature-desc">
+            Ізолює всі операції в межах поточної робочої директорії. Жоден інструмент не може звернутися до <code>/etc/passwd</code>, <code>~/.ssh</code> або вийти за межі репозиторію через символічні посилання.
+          </div>
+        </div>
+        <div class="feature-box">
+          <div class="feature-title">🚫 Чорний список команд (SystemExec)</div>
+          <div class="feature-desc">
+            Агент принципово блокує запуск незворотних операцій: <code>rm</code>, <code>sudo</code>, <code>dd</code>, <code>git push</code>, <code>git reset --hard</code>, вимагаючи ручного виконання користувачем.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Ключові можливості та розширення -->
+    <section class="card">
+      <h2>🔌 3. Розширюваність: MCP та Skills</h2>
+
+      <div class="diagram-container">
+        <div class="mermaid">
+          flowchart TD
+            subgraph EllaCore ["Ядро Ella"]
+              AgentCore["Ella.Agent"]
+            end
+
+            subgraph MCPProtocol ["Model Context Protocol"]
+              MCPClient["Ella.Mcp.Client (JSON-RPC)"]
+              ExtServers["Зовнішні сервери (GitHub, Postgres, Docker MCP)"]
+              MCPClient <--> ExtServers
+            end
+
+            subgraph SkillsArch ["Skills: Progressive Disclosure"]
+              SkillsLoader["Ella.Skills"]
+              BriefSystemPrompt["Системний промпт: Лише назви та описи"]
+              FullSkillBody["load_skill: Завантаження повної інструкції"]
+              SkillsLoader --> BriefSystemPrompt
+              BriefSystemPrompt -.-> FullSkillBody
+            end
+
+            AgentCore <--> MCPClient
+            AgentCore <--> SkillsLoader
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="feature-box">
+          <div class="feature-icon">🧩</div>
+          <div class="feature-title">Model Context Protocol (MCP)</div>
+          <div class="feature-desc">
+            Підтримка офіційного відкритого протоколу від Anthropic. Дозволяє підключати сторонні інструменти (інспекція бази даних, взаємодія з GitHub API тощо) прямо на льоту командою <code>/mcp &lt;cmd&gt;</code> без правки коду агента.
+          </div>
+        </div>
+        <div class="feature-box">
+          <div class="feature-icon">📚</div>
+          <div class="feature-title">Skills з прогресивним розкриттям</div>
+          <div class="feature-desc">
+            Кастомні Markdown-інструкції (наприклад, як запускати тести або правила стилю проєкту). Завдяки <strong>progressive disclosure</strong>, тіло інструкції підвантажується в контекст лише тоді, коли воно дійсно потрібне, заощаджуючи до 80% контексту.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Порівняння з конкурентами -->
+    <section class="card">
+      <h2>⚖️ 4. Порівняння: Чому платформа Elixir/BEAM — це перевага</h2>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Параметр / Можливість</th>
+              <th>Ella (Elixir)</th>
+              <th>Aider (Python)</th>
+              <th>Claude Code (Node.js)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Архітектура конкурентності</strong></td>
+              <td><span class="check">✓ OTP / Легковагові BEAM-процеси</span></td>
+              <td>GIL / Обмежений паралелізм</td>
+              <td>Event-loop / Node worker threads</td>
+            </tr>
+            <tr>
+              <td><strong>Безпека та ізоляція</strong></td>
+              <td><span class="check">✓ Вбудований Sandbox + Snapshot undo</span></td>
+              <td>Покладається на git dirty check</td>
+              <td>Запити на підтвердження shell</td>
+            </tr>
+            <tr>
+              <td><strong>Підтримка протоколу MCP</strong></td>
+              <td><span class="check">✓ Нативна (повноцінний клієнт)</span></td>
+              <td><span class="cross">✗ Ні</span></td>
+              <td><span class="check">✓ Так</span></td>
+            </tr>
+            <tr>
+              <td><strong>Підтримка Skills</strong></td>
+              <td><span class="check">✓ З прогресивним розкриттям</span></td>
+              <td><span class="cross">✗ Тільки статичні prompt файли</span></td>
+              <td><span class="check">✓ CLAUDE.md</span></td>
+            </tr>
+            <tr>
+              <td><strong>Швидкість запуску та пам'ять</strong></td>
+              <td><span class="check">✓ Миттєва (Escript / Burrito binary)</span></td>
+              <td>Повільна (важкий Python venv)</td>
+              <td>Середня (Node.js runtime)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Створено для проєкту <strong>Ella</strong> • Версія 0.2.0 • 2026</p>
+  </footer>
+
+</body>
+</html>

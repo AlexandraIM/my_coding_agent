@@ -16,24 +16,75 @@ defmodule Ella.Context do
   # Скільки останніх повідомлень не стискати нізащо.
   @keep_recent 12
 
+  # Коефіцієнт «скільки токенів на одиницю нашої оцінки», визначений
+  # за реальними даними API: 1.0 — оцінка точна, 1.5 — промахнулися
+  # в півтора рази.
+  @min_factor 0.5
+  @max_factor 4.0
+  @calibration_smoothing 0.3
+
   @doc """
   Чи перевищує історія допустимий розмір.
   """
   def over_budget?(messages, opts) do
-    estimate(messages) > budget(opts)
+    estimate(messages, opts) > budget(opts)
   end
+
+  @doc """
+  Коефіцієнт калібрування, який застосовується до оцінки.
+  """
+  def factor(opts), do: Keyword.get(opts, :estimate_factor, 1.0)
+
+  @doc """
+  Уточнює коефіцієнт оцінки за реальними токенами відповіді API.
+
+  Правило «4 символи = 1 токен» помиляється на десятки відсотків
+  залежно від мови та моделі. API повертає точний `prompt_tokens`
+  для того самого запиту — ідеальна точка для калібрування.
+
+  Коефіцієнт згладжується: один виняток (наприклад, запит із
+  незвичайним промптом) не повинен різко зміщувати всі наступні
+  оцінки. Значення затискаються в розумні межі, інакше один
+  збій usage міг би змусити агента стискати порожню історію.
+  """
+  @spec calibrate(number(), non_neg_integer() | nil, keyword()) :: number()
+  def calibrate(current_factor, prompt_tokens, opts \\ [])
+      when is_number(current_factor) do
+    smoothing = Keyword.get(opts, :calibration_smoothing, @calibration_smoothing)
+    estimated = Keyword.get(opts, :last_estimate)
+
+    if is_integer(prompt_tokens) and prompt_tokens > 0 and
+         is_number(estimated) and estimated > 0 do
+      observed = prompt_tokens / estimated
+      blended = current_factor * (1 - smoothing) + observed * smoothing
+
+      clamp_factor(blended)
+    else
+      current_factor
+    end
+  end
+
+  defp clamp_factor(value) when value < @min_factor, do: @min_factor
+  defp clamp_factor(value) when value > @max_factor, do: @max_factor
+  defp clamp_factor(value), do: value
 
   @doc """
   Орієнтовний розмір історії в токенах.
 
   Ми не знаємо точний токенайзер моделі, тому рахуємо символи й
   ділимо на 4. Для рішення «стискати чи ні» цього достатньо.
+
+  З опцією `:estimate_factor` результат домножується на калібрувальний
+  коефіцієнт — див. `calibrate/3`.
   """
-  def estimate(messages) when is_list(messages) do
+  def estimate(messages, opts \\ []) when is_list(messages) do
     messages
     |> Enum.map(&message_size/1)
     |> Enum.sum()
+    |> scale(factor(opts))
   end
+
+  defp scale(tokens, factor), do: round(tokens * factor)
 
   defp message_size(%{} = message) do
     base =
@@ -105,7 +156,7 @@ defmodule Ella.Context do
     budget = budget(opts)
     keep = Keyword.get(opts, :keep_recent, @keep_recent)
 
-    if estimate(messages) <= budget do
+    if estimate(messages, opts) <= budget do
       {:ok, messages}
     else
       do_compact(messages, keep, budget, opts)
@@ -123,7 +174,7 @@ defmodule Ella.Context do
 
       candidate = system ++ [summary] ++ recent
 
-      if estimate(candidate) <= budget do
+      if estimate(candidate, opts) <= budget do
         {:ok, candidate}
       else
         # Підсумок зберігаємо в будь-якому разі: без нього агент
@@ -148,7 +199,7 @@ defmodule Ella.Context do
     candidate = system ++ trimmed
 
     cond do
-      estimate(candidate) <= budget ->
+      estimate(candidate, opts) <= budget ->
         {:ok, candidate}
 
       max_chars <= @floor_chars ->
@@ -165,7 +216,7 @@ defmodule Ella.Context do
   # Відкидаємо найстаріші повідомлення, доки не вмістимось. Хоча б
   # одне повідомлення зберігаємо: без нього наступний запит не матиме
   # жодного контексту.
-  defp drop_oldest(system, rest, budget, _opts, max_chars) do
+  defp drop_oldest(system, rest, budget, opts, max_chars) do
     trimmed = trim_tool_content(rest, max_chars)
     total = length(trimmed)
 
@@ -174,7 +225,7 @@ defmodule Ella.Context do
     Enum.reduce_while((total - 1)..1//-1, nil, fn keep, _acc ->
       candidate = system ++ Enum.take(trimmed, keep)
 
-      if estimate(candidate) <= budget do
+      if estimate(candidate, opts) <= budget do
         {:halt, {:ok, candidate}}
       else
         {:cont, nil}

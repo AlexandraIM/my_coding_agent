@@ -147,6 +147,61 @@ defmodule Ella.ContextTest do
     end
   end
 
+  describe "калібрування оцінки" do
+    test "коефіцієнт за замовчуванням — 1.0" do
+      assert Context.factor([]) == 1.0
+    end
+
+    test "estimate/2 враховує коефіцієнт" do
+      messages = [user(String.duplicate("a", 400))]
+
+      assert Context.estimate(messages, estimate_factor: 2.0) ==
+               round(Context.estimate(messages) * 2.0)
+    end
+
+    test "калібрування піднімає коефіцієнт, коли оцінка занижена" do
+      # API порахував удвічі більше, ніж ми оцінили.
+      updated = Context.calibrate(1.0, 200, last_estimate: 100)
+
+      assert updated > 1.0
+      assert updated < 2.0
+    end
+
+    test "калібрування опускає коефіцієнт, коли оцінка завищена" do
+      updated = Context.calibrate(2.0, 50, last_estimate: 100)
+
+      assert updated < 2.0
+    end
+
+    test "без реальних даних коефіцієнт не змінюється" do
+      assert Context.calibrate(1.0, nil, last_estimate: 100) == 1.0
+      assert Context.calibrate(1.0, 0, last_estimate: 100) == 1.0
+      assert Context.calibrate(1.0, 100, []) == 1.0
+      assert Context.calibrate(1.0, 100, last_estimate: 0) == 1.0
+    end
+
+    test "коефіцієнт затискається, щоб виняток не зруйнував сесію" do
+      assert Context.calibrate(1.0, 100_000, last_estimate: 1) <= 4.0
+      assert Context.calibrate(1.0, 1, last_estimate: 100_000) >= 0.5
+    end
+
+    test "стискання враховує калібрований розмір" do
+      messages =
+        for i <- 1..30, do: tool("call_#{i}", String.duplicate("data ", 100))
+
+      budget = Context.estimate(messages)
+
+      # Без коефіцієнта історія точно вміщається...
+      assert {:ok, ^messages} = Context.compact(messages, context_budget: budget)
+
+      # ...а з ним — ні, і агент стискає.
+      assert {:ok, compacted} =
+               Context.compact(messages, context_budget: budget, estimate_factor: 3.0)
+
+      assert length(compacted) < length(messages)
+    end
+  end
+
   describe "budget/1 за замовчуванням" do
     test "використовує max_context_tokens, якщо заданий" do
       assert Context.budget(max_context_tokens: 4_321) == 4_321

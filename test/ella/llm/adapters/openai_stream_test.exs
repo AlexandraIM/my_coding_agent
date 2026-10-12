@@ -248,5 +248,122 @@ defmodule Ella.Llm.Adapters.OpenAI.StreamTest do
       assert error.retryable?
       assert error.status == 503
     end
+
+    test "читає Retry-After у секундах для 429" do
+      {port, listener} = raw_server("HTTP/1.1 429 Too Many Requests\r\nretry-after: 3\r\n\r\n")
+      on_exit(fn -> :gen_tcp.close(listener) end)
+
+      assert {:error, error} = call(port, fn _ -> :ok end)
+      assert error.retryable?
+      assert error.retry_after_ms == 3_000
+    end
+
+    test "читає Retry-After як HTTP-дату" do
+      header = http_date(DateTime.add(DateTime.utc_now(), 30, :second))
+
+      {port, listener} =
+        raw_server("HTTP/1.1 429 Too Many Requests\r\nretry-after: #{header}\r\n\r\n")
+
+      on_exit(fn -> :gen_tcp.close(listener) end)
+
+      assert {:error, error} = call(port, fn _ -> :ok end)
+      assert is_integer(error.retry_after_ms)
+      assert error.retry_after_ms > 20_000
+    end
+
+    test "408 вважається тимчасовою помилкою" do
+      {port, listener} = raw_server("HTTP/1.1 408 Request Timeout\r\n\r\n")
+      on_exit(fn -> :gen_tcp.close(listener) end)
+
+      assert {:error, error} = call(port, fn _ -> :ok end)
+      assert error.retryable?
+      assert error.status == 408
+    end
+
+    test "обрив з'єднання до першого фрагмента можна повторити" do
+      {:ok, listener} =
+        :gen_tcp.listen(0, [:binary, packet: :raw, active: false, reuseaddr: true])
+
+      {:ok, port} = :inet.port(listener)
+
+      spawn_link(fn ->
+        {:ok, socket} = :gen_tcp.accept(listener)
+        :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-length: 400\r\n\r\npartial")
+        :gen_tcp.close(socket)
+      end)
+
+      on_exit(fn -> :gen_tcp.close(listener) end)
+
+      assert {:error, error} = call(port, fn _ -> :ok end)
+      assert error.retryable?
+      assert error.message =~ "Network error"
+    end
+
+    test "обрив після видимого тексту не повторюється" do
+      # Без [DONE]: з'єднання обривається, не дочекавшись завершення.
+      body =
+        Enum.map_join(
+          [
+            ~s({"choices":[{"delta":{"content":"Hello"}}]}),
+            ~s({"choices":[{"delta":{"content":", world"}}]})
+          ],
+          fn event -> "data: " <> event <> "\n\n" end
+        )
+
+      {:ok, listener} =
+        :gen_tcp.listen(0, [:binary, packet: :raw, active: false, reuseaddr: true])
+
+      {:ok, port} = :inet.port(listener)
+
+      spawn_link(fn ->
+        {:ok, socket} = :gen_tcp.accept(listener)
+
+        :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n")
+        :gen_tcp.send(socket, body)
+
+        # Даємо клієнту прочитати чанки перед обривом: інакше гонка
+        # і тест перевірятиме не логіку, а швидкість доставки.
+        Process.sleep(100)
+        # Обриваємо відповідь, не надіславши [DONE].
+        :gen_tcp.close(socket)
+      end)
+
+      on_exit(fn -> :gen_tcp.close(listener) end)
+
+      parent = self()
+      on_text = fn fragment -> send(parent, {:fragment, fragment}) end
+
+      assert {:error, error} = call(port, on_text)
+      assert_received {:fragment, "Hello"}
+
+      # Повтор продублював би "Hello" у терміналі, тож помилка
+      # постійна.
+      refute error.retryable?
+      assert error.message =~ "partial output"
+    end
+  end
+
+  defp http_date(datetime) do
+    weekday = ~w(Mon Tue Wed Thu Fri Sat Sun) |> Enum.at(Date.day_of_week(datetime) - 1)
+    month = ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec) |> Enum.at(datetime.month - 1)
+
+    "#{weekday}, #{pad(datetime.day)} #{month} #{datetime.year} " <>
+      "#{pad(datetime.hour)}:#{pad(datetime.minute)}:#{pad(datetime.second)} GMT"
+  end
+
+  defp pad(n) when n < 10, do: "0#{n}"
+  defp pad(n), do: to_string(n)
+
+  defp raw_server(response) do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, packet: :raw, active: false, reuseaddr: true])
+    {:ok, port} = :inet.port(listener)
+
+    spawn_link(fn ->
+      {:ok, socket} = :gen_tcp.accept(listener)
+      :gen_tcp.send(socket, response)
+      :gen_tcp.close(socket)
+    end)
+
+    {port, listener}
   end
 end

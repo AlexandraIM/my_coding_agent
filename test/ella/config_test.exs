@@ -71,6 +71,41 @@ defmodule Ella.ConfigTest do
     end
   end
 
+  describe "налаштування надійності" do
+    test "дефолти застосовуються, коли ключів немає" do
+      assert Config.max_attempts() == 4
+      assert Config.request_timeout_ms() == 120_000
+      assert Config.context_budget() == 120_000
+      assert Config.max_iterations() == Ella.Tool.max_iterations()
+    end
+
+    test "читаються з конфігу проєкту", %{root: root} do
+      write_config(root, %{
+        "max_attempts" => 7,
+        "request_timeout_ms" => 30_000,
+        "context_budget" => 8_000,
+        "max_iterations" => 3
+      })
+
+      assert Config.max_attempts() == 7
+      assert Config.request_timeout_ms() == 30_000
+      assert Config.context_budget() == 8_000
+      assert Config.max_iterations() == 3
+    end
+
+    test "некоректні значення не ламають сесію", %{root: root} do
+      write_config(root, %{
+        "max_attempts" => "багато",
+        "request_timeout_ms" => -1,
+        "context_budget" => nil
+      })
+
+      assert Config.max_attempts() == 4
+      assert Config.request_timeout_ms() == 120_000
+      assert Config.context_budget() == 120_000
+    end
+  end
+
   describe "protected?/2 — матчинг" do
     defp config(paths), do: %{"protected_paths" => paths}
 

@@ -34,7 +34,10 @@ defmodule Ella.Stream do
 
     {events, rest} = take_complete(state.buffer)
 
-    state = Map.put(state, :buffer, rest)
+    state =
+      state
+      |> Map.put(:buffer, rest)
+      |> Map.put(:done?, Map.get(state, :done?, false) or Enum.any?(events, &(&1.data == @done)))
 
     events =
       events
@@ -116,12 +119,21 @@ defmodule Ella.Stream do
   у Req і з'єднання закриється — сервер перестане надсилати чанки,
   а не просто припиниться їхня обробка.
 
+  `on_complete` викликається, коли прийшов маркер `[DONE]`. SSE
+  відповідь не має довжини, тому обрив з'єднання виглядає для Req так
+  само, як штатний завершення: без цієї позначки адаптер не відрізнить
+  «сервер договорив» від «з'єднання впало на півслові».
+
   Повертає :halt, якщо `on_event` повернула {:halt, reason}.
   """
-  def accumulator(on_event) do
+  def accumulator(on_event, on_complete \\ fn _state -> :ok end) do
     fn
       {:data, data}, acc ->
         {:ok, events, new_state} = feed(data, %{buffer: read_sse_buffer(acc)})
+
+        if new_state.done? do
+          on_complete.(new_state)
+        end
 
         case reduce_events(events, on_event, acc) do
           {:halt, _reason} -> {:halt, put_sse_buffer(acc, new_state.buffer)}

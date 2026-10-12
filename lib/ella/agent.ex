@@ -66,7 +66,11 @@ defmodule Ella.Agent do
         Ella.Tools.LoadSkill
       ])
 
-    llm_opts = Keyword.get(opts, :llm_opts, [])
+    llm_opts =
+      opts
+      |> Keyword.get(:llm_opts, [])
+      |> Keyword.put_new_lazy(:max_attempts, fn -> Ella.Config.max_attempts() end)
+
     project_rules = ProjectRules.load_rules()
     skills = Ella.Skills.load_all()
 
@@ -74,14 +78,18 @@ defmodule Ella.Agent do
       Owl.IO.puts(Owl.Data.tag("Loaded #{length(skills)} project skill(s)", :magenta))
     end
 
+    # Бюджет береться з конфігу, але явна опція агента має пріоритет:
+    # тести й вкладені агенти передають власні межі.
     context_opts =
-      Keyword.take(opts, [
+      opts
+      |> Keyword.take([
         :context_budget,
         :max_context_tokens,
         :keep_recent,
         :max_tool_result_chars,
         :summary_max_entries
       ])
+      |> Keyword.put_new_lazy(:context_budget, fn -> Ella.Config.context_budget() end)
 
     state = %{
       mode: mode,
@@ -95,7 +103,8 @@ defmodule Ella.Agent do
       active_skill: nil,
       context_opts: context_opts,
       usage: Ella.Llm.Usage.empty(),
-      max_iterations: Keyword.get(opts, :max_iterations, Tool.max_iterations())
+      max_iterations:
+        Keyword.get_lazy(opts, :max_iterations, fn -> Ella.Config.max_iterations() end)
     }
 
     state = restore_saved_mcps(state)
@@ -391,8 +400,42 @@ defmodule Ella.Agent do
         {:error, reason, state.usage}
 
       {:ok, context_messages} ->
-        continue_loop(context_messages, messages, active_tools, tool_map, state, current_iter)
+        # Агент продовжує саме зі стиснутою історією: наступні кроки
+        # додаються до неї, тож старі повідомлення не стискаються
+        # вдруге на кожному кроці.
+        continue_loop(
+          context_messages,
+          context_messages,
+          active_tools,
+          tool_map,
+          state,
+          current_iter
+        )
     end
+  end
+
+  # API повертає точний prompt_tokens для запиту, який ми щойно
+  # надіслали. Це найкраща можливість уточнити нашу грубу оцінку
+  # «4 символи = 1 токен»: без неї агент ризикує впиратися в
+  # контекстне вікно тоді, коли оцінка його недооцінює.
+  defp calibrate(state, sent_messages, usage) do
+    # Оцінка має бути «сирою», без уже застосованого коефіцієнта,
+    # інакше калібрування підсилювало б саме себе.
+    raw_opts = Keyword.delete(state.context_opts, :estimate_factor)
+    estimated = Ella.Context.estimate(sent_messages, raw_opts)
+
+    prompt_tokens =
+      case usage do
+        %Ella.Llm.Usage{prompt_tokens: tokens} -> tokens
+        _ -> nil
+      end
+
+    updated =
+      Ella.Context.calibrate(Ella.Context.factor(state.context_opts), prompt_tokens,
+        last_estimate: estimated
+      )
+
+    %{state | context_opts: Keyword.put(state.context_opts, :estimate_factor, updated)}
   end
 
   # Стискаємо історію перед запитом, щоб вона не перевищила вікно.
@@ -440,7 +483,11 @@ defmodule Ella.Agent do
     case LlmClient.chat_completion(context_messages, active_tools, llm_opts) do
       {:ok, %{"tool_calls" => tool_calls} = message, usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
-        state = %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
+        state =
+          state
+          |> calibrate(context_messages, usage)
+          |> then(&%{&1 | usage: Ella.Llm.Usage.add(&1.usage, usage)})
+
         updated_messages = original_messages ++ [message]
 
         tool_results_messages =
@@ -467,12 +514,20 @@ defmodule Ella.Agent do
 
       {:ok, %{"content" => content} = message, usage}
       when not is_nil(content) and content != "" ->
-        state = %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
+        state =
+          state
+          |> calibrate(context_messages, usage)
+          |> then(&%{&1 | usage: Ella.Llm.Usage.add(&1.usage, usage)})
+
         finish_turn(content)
         {:ok, original_messages ++ [message], content, state.usage}
 
       {:ok, message, usage} ->
-        state = %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
+        state =
+          state
+          |> calibrate(context_messages, usage)
+          |> then(&%{&1 | usage: Ella.Llm.Usage.add(&1.usage, usage)})
+
         finish_turn(message["content"] || "Done.")
         {:ok, original_messages ++ [message], message["content"] || "Done.", state.usage}
 
