@@ -175,18 +175,20 @@ This ensures a precise rollback without touching your uncommitted work or requir
 
 ### For users (no Erlang needed)
 
-Download a prebuilt binary for your platform and run it — it bundles the BEAM
-runtime, so nothing needs to be installed:
+Someone hands you a single file for your platform and you run it — it bundles
+the BEAM runtime, so nothing needs to be installed:
 
 ```sh
-./ella_macos_silicon        # macOS (Apple Silicon)
-./ella_macos                # macOS (Intel)
-./ella_linux                # Linux x86-64
+./ella_native                       # macOS (Apple Silicon)
 ```
 
 Then set an API key, e.g. `export OPENAI_API_KEY=sk-...`, and start typing.
 The first launch unpacks itself into `~/.burrito/` (about 28 MB) and reuses
-that copy afterwards.
+that copy from then on.
+
+There is no release to download yet: binaries are built from the repository, and
+each platform gets its own (see [Standalone binaries](#standalone-binaries))
+— the repository must first publish them as release artifacts.
 
 ### For developers
 
@@ -245,8 +247,9 @@ mix deps.get
 MIX_ENV=prod mix release     # outputs to burrito_out/
 ```
 
-Build a single target with `BURRITO_TARGET=macos_silicon mix release`. See
-[Standalone binaries](#standalone-binaries) for how the packaging works.
+The output is `burrito_out/ella_native`, runnable on the machine you built it
+on. See [Standalone binaries](#standalone-binaries) for how that works, and for
+handing it to people on other platforms.
 
 ### Windows (Scoop)
 
@@ -260,8 +263,9 @@ mix deps.get
 mix escript.build
 ```
 
-> Burrito does not support building *on* Windows; use WSL if that is your
-> development machine. The prebuilt binary runs on Windows regardless.
+> Burrito does not support building *on* Windows. Use WSL if that is your
+> development machine — it produces a Linux binary, which is what a WSL tester
+> can run anyway.
 
 > **Tip:** On all platforms, `kiex` or `asdf` can pin exact Elixir/OTP versions per-project.
 
@@ -411,17 +415,15 @@ You can define custom coding standards, architectural preferences, or project-sp
 ## Standalone binaries
 
 `mix escript.build` still requires Erlang on the user's machine. For people who
-do not have it, Ella ships a self-contained binary built with
-[Burrito](https://github.com/burrito-elixir/burrito) — the release bundles the
+do not have it, Ella can build a self-contained executable with
+[Burrito](https://github.com/burrito-elixir/burrito) — the binary bundles the
 BEAM runtime along with the application:
 
 ```sh
-MIX_ENV=prod mix release            # builds every configured target
-BURRITO_TARGET=macos_silicon mix release   # or just one
+brew install zig xz           # or: apt install zig xz-utils
+mix deps.get
+MIX_ENV=prod mix release     # produces ./burrito_out/ella_native
 ```
-
-Binaries land in `burrito_out/`. Building requires **Zig 0.16.0** and **xz** in
-`PATH` (`brew install zig xz`).
 
 | Approach | Needs Erlang on user's machine | Self-contained |
 | :--- | :--- | :--- |
@@ -429,7 +431,20 @@ Binaries land in `burrito_out/`. Building requires **Zig 0.16.0** and **xz** in
 | `mix release` + tar.gz | yes | no |
 | `mix release` (Burrito) | no | yes |
 
-### How it works
+### One binary per platform, built on that platform
+
+The release config declares a single target: the platform running the build.
+That is not an accident — ERTS is taken from the build machine itself
+(`lib/ella/erts_resolver.ex`), because Burrito's CDN has no prebuilt ERTS for
+OTP 29.1.1 yet. Shipping the runtime from the host means a cross-build would
+embed the wrong architecture, so each platform builds its own binary. In CI
+that is simply a matrix of runners; see below.
+
+To get Burrito to download ERTS for foreign targets instead, drop
+`extra_steps` from the release config in `mix.exs` and list the targets you
+want — possible once the CDN catches up with the OTP release.
+
+### How the packaging works
 
 Burrito needs a `:mod` callback to start from, so `Ella.Application` launches
 the CLI when — and only when — the process is running as a standalone binary
@@ -438,18 +453,18 @@ variable is absent, so the interactive loop never starts and cannot block the
 test run. After the session ends the VM is halted explicitly: nothing else
 would ever finish.
 
-The build takes ERTS from the local Erlang installation
-(`lib/ella/erts_resolver.ex`) instead of downloading a prebuilt one. That
-keeps the build working without access to Burrito's CDN, at the cost of
-producing binaries that only run on the platform they were built on — remove
-`Ella.ErtsResolver` registration in `mix.exs` for a genuine cross-build.
+The ERTS resolver is registered by a build step
+(`lib/ella/build_steps/register_erts_resolver.ex`) rather than from
+`Ella.Application` — module bodies only run at compile time, so a resolver
+registered there works on the first build after a change and silently
+disappears on the next one that has nothing to recompile.
 
 Once unpacked, a binary extracts itself to `~/.burrito/` on first run and
 reuses that copy afterwards:
 
 ```sh
-./ella_macos_silicon maintenance directory   # where it unpacked itself
-./ella_macos_silicon maintenance uninstall   # remove the unpacked copy
+./burrito_out/ella_native maintenance directory   # where it unpacked itself
+./burrito_out/ella_native maintenance uninstall   # remove the unpacked copy
 ```
 
 `bakeware` is not an alternative: it was last updated in May 2022, and Burrito

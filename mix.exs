@@ -38,23 +38,50 @@ defmodule Ella.MixProject do
   # Burrito пакує реліз разом з ERTS у самодостатній бінарник:
   # тестувальнику не потрібен ані Erlang, ані Elixir.
   #
-  # ERTS береться з установленого Erlang (Ella.ErtsResolver), а не
-  # завантажується з beam-machine: це робить збірку можливою без
-  # доступу до CDN. Плата — бінарник гарантовано працює лише на тих
-  # платформах, де його збирали.
+  # Ціль лише нативна, і це свідомо: ERTS береться з машини збірки
+  # (див. Ella.ErtsResolver), тож крос-білд зібрав би рантайм чужої
+  # архітектури. Кожна платформа збирає власний бінарник — у CI це
+  # просто матриця з трьох раннерів. Щойно для OTP 29.1.1 з'явиться
+  # готовий ERTS на beam-machine, приберіть RegisterErtsResolver із
+  # extra_steps, і тут можна буде перелічити будь-які цілі:
+  #
+  #     targets: [linux: [os: :linux, cpu: :x86_64]]
   def releases do
     [
       ella: [
         steps: [:assemble, &Burrito.wrap/1],
         burrito: [
-          targets: [
-            macos_silicon: [os: :darwin, cpu: :aarch64],
-            macos: [os: :darwin, cpu: :x86_64],
-            linux: [os: :linux, cpu: :x86_64]
+          targets: [native: [os: native_os(), cpu: native_cpu()]],
+          # Реєструє наш ERTS-резолвер: без нього Burrito завантажує
+          # готовий ERTS із свого CDN, якого для OTP 29.1.1 немає.
+          extra_steps: [
+            fetch: [pre: [Ella.BuildSteps.RegisterErtsResolver]]
           ]
         ]
       ]
     ]
+  end
+
+  # Burrito без explicit targets ламається, а «яку платформу ми збираємо»
+  # треба знати до компіляції залежностей, тож тут — сирий Erlang.
+  defp native_os do
+    case :os.type() do
+      {:unix, :linux} -> :linux
+      _ -> :darwin
+    end
+  end
+
+  defp native_cpu do
+    :erlang.system_info(:system_architecture)
+    |> to_string()
+    |> String.split("-")
+    |> List.first()
+    |> case do
+      "x86_64" -> :x86_64
+      "arm64" -> :aarch64
+      "aarch64" -> :aarch64
+      _ -> :x86_64
+    end
   end
 
   # Burrito — інструмент пакування, а не залежність застосунку:

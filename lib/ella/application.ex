@@ -10,14 +10,6 @@ defmodule Ella.Application do
 
   use Application
 
-  # Burrito шукає ERTS за замовчуванням у своєму сховищі; наш
-  # резолвер бере його з установленого Erlang. Реєстрація мусить
-  # бути умовною: burrito — інструмент пакування з runtime: false,
-  # у самому бінарнику такого модуля немає.
-  if Code.ensure_loaded?(Burrito) do
-    Burrito.register_erts_resolver(Ella.ErtsResolver)
-  end
-
   @impl true
   def start(_type, _args) do
     if standalone?() do
