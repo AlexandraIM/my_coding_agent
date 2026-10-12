@@ -152,12 +152,29 @@ This ensures a precise rollback without touching your uncommitted work or requir
 
 ## Installation
 
-### Prerequisites
+### For users (no Erlang needed)
+
+Download a prebuilt binary for your platform and run it — it bundles the BEAM
+runtime, so nothing needs to be installed:
+
+```sh
+./ella_macos_silicon        # macOS (Apple Silicon)
+./ella_macos                # macOS (Intel)
+./ella_linux                # Linux x86-64
+```
+
+Then set an API key, e.g. `export OPENAI_API_KEY=sk-...`, and start typing.
+The first launch unpacks itself into `~/.burrito/` (about 28 MB) and reuses
+that copy afterwards.
+
+### For developers
 
 | Requirement | Minimum | Why |
 |---|---|---|
 | **Erlang/OTP** | 26+ (29+ recommended) | Runtime for the escript binary |
 | **Elixir** | 1.20+ | Build tool (`mix`) and source compilation |
+| **Zig** | 0.16.0 | Only to build the standalone binary |
+| **xz** | any | Only to build the standalone binary |
 | **Git** | any | Snapshot backups and project detection |
 | **ripgrep** (optional) | any | Speeds up `grep` tool — falls back to built-in walker if missing |
 
@@ -197,6 +214,19 @@ mix deps.get
 mix escript.build
 ```
 
+### Building the standalone binary
+
+To produce a binary that runs without Erlang (what you hand to testers):
+
+```sh
+brew install zig xz          # macOS; on Linux: apt install zig xz-utils
+mix deps.get
+MIX_ENV=prod mix release     # outputs to burrito_out/
+```
+
+Build a single target with `BURRITO_TARGET=macos_silicon mix release`. See
+[Standalone binaries](#standalone-binaries) for how the packaging works.
+
 ### Windows (Scoop)
 
 ```powershell
@@ -208,6 +238,9 @@ cd my_coding_agent
 mix deps.get
 mix escript.build
 ```
+
+> Burrito does not support building *on* Windows; use WSL if that is your
+> development machine. The prebuilt binary runs on Windows regardless.
 
 > **Tip:** On all platforms, `kiex` or `asdf` can pin exact Elixir/OTP versions per-project.
 
@@ -281,13 +314,12 @@ Ella.start_cli()
 ### Building a single-file CLI
 
 ```sh
-mix escript.build   # produces ./ella
+mix escript.build   # produces ./ella, ~2 MB, needs Erlang on the machine
 ./ella
 ```
 
-One self-contained executable (~2 MB) with the application and all
-dependencies inside. **Erlang/OTP must be installed on the user's machine** —
-see [Standalone binaries](#standalone-binaries) if that is not acceptable.
+To hand the binary to someone without Erlang, build the Burrito release
+instead — see [Standalone binaries](#standalone-binaries).
 
 The CLI is interactive, so it needs a real terminal. It will not work when
 piped into `head` or run from a script without a TTY.
@@ -357,27 +389,47 @@ You can define custom coding standards, architectural preferences, or project-sp
 
 ## Standalone binaries
 
-`mix escript.build` still requires Erlang on the user's machine. If Ella has to
-reach people who do not have it, the options are:
+`mix escript.build` still requires Erlang on the user's machine. For people who
+do not have it, Ella ships a self-contained binary built with
+[Burrito](https://github.com/burrito-elixir/burrito) — the release bundles the
+BEAM runtime along with the application:
+
+```sh
+MIX_ENV=prod mix release            # builds every configured target
+BURRITO_TARGET=macos_silicon mix release   # or just one
+```
+
+Binaries land in `burrito_out/`. Building requires **Zig 0.16.0** and **xz** in
+`PATH` (`brew install zig xz`).
 
 | Approach | Needs Erlang on user's machine | Self-contained |
 | :--- | :--- | :--- |
-| `mix escript.build` (current) | yes | no |
+| `mix escript.build` | yes | no |
 | `mix release` + tar.gz | yes | no |
-| [Burrito](https://github.com/burrito-elixir/burrito) | no | yes |
+| `mix release` (Burrito) | no | yes |
 
-**Burrito is the intended path** for a single binary that runs anywhere. It is
-not configured yet, deliberately, for two reasons:
+### How it works
 
-1. **Toolchain.** It pins **Zig 0.15.2**. The README warns that newer Zig is
-   unsupported. Verify the build works before investing in the config.
-2. **Entry point.** Burrito starts the application through a `:mod` callback,
-   so `mix.exs` would need an `Ella.Application` whose `start/2` calls
-   `Ella.start_cli()`.
+Burrito needs a `:mod` callback to start from, so `Ella.Application` launches
+the CLI when — and only when — the process is running as a standalone binary
+(its environment sets `__BURRITO`). Under `mix test` or `iex -S mix` that
+variable is absent, so the interactive loop never starts and cannot block the
+test run. After the session ends the VM is halted explicitly: nothing else
+would ever finish.
+
+The build takes ERTS from the local Erlang installation
+(`lib/ella/erts_resolver.ex`) instead of downloading a prebuilt one. That
+keeps the build working without access to Burrito's CDN, at the cost of
+producing binaries that only run on the platform they were built on — remove
+`Ella.ErtsResolver` registration in `mix.exs` for a genuine cross-build.
+
+Once unpacked, a binary extracts itself to `~/.burrito/` on first run and
+reuses that copy afterwards:
+
+```sh
+./ella_macos_silicon maintenance directory   # where it unpacked itself
+./ella_macos_silicon maintenance uninstall   # remove the unpacked copy
+```
 
 `bakeware` is not an alternative: it was last updated in May 2022, and Burrito
 is the maintained successor.
-
-To set it up: add `{:burrito, "~> 1.6", runtime: false}`, add the `:mod` entry
-point, configure `releases/0` with `steps: [:assemble, &Burrito.wrap/1]`, then
-run `MIX_ENV=prod mix release`.
