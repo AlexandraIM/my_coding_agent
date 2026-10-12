@@ -1,7 +1,7 @@
 defmodule Ella.Llm.Adapters.OpenAI do
   @behaviour Ella.Llm.Adapter
 
-  alias Ella.Llm.{Error, Usage}
+  alias Ella.Llm.{Error, ToolCalls, Usage}
   alias Ella.Stream
 
   defstruct [:buffer, :text, :tool_calls, :usage, :halted, completed: false]
@@ -156,46 +156,10 @@ defmodule Ella.Llm.Adapters.OpenAI do
   end
 
   defp apply_delta(acc, %{"tool_calls" => [call | _]}, _on_text) when is_map(call) do
-    {%{acc | tool_calls: merge_tool_call(acc.tool_calls, call)}, :ok}
+    {%{acc | tool_calls: ToolCalls.merge(acc.tool_calls, call)}, :ok}
   end
 
   defp apply_delta(acc, _delta, _on_text), do: {acc, :ok}
-
-  # Провайдери надсилають аргументи інструментів частинами: індекс у
-  # масиві стабільний, тож накопичуємо за ним, а не просто append.
-  defp merge_tool_call(existing, call) when is_list(existing) do
-    index = Map.get(call, "index")
-
-    case Enum.find_index(existing, &(&1["index"] == index)) do
-      nil ->
-        existing ++ [call]
-
-      position ->
-        List.replace_at(existing, position, merge_fields(Enum.at(existing, position), call))
-    end
-  end
-
-  # Злиття має бути рекурсивним: аргументи приходять усередині
-  # вкладеного об'єкта "function", і просте заміщення відкидало б
-  # уже накопичену частину JSON.
-  defp merge_fields(base, addition) do
-    Enum.reduce(addition, base, fn
-      {key, new}, acc when is_map(new) ->
-        case Map.get(acc, key) do
-          current when is_map(current) -> Map.put(acc, key, merge_fields(current, new))
-          _ -> Map.put(acc, key, new)
-        end
-
-      {key, new}, acc when is_binary(new) ->
-        case Map.get(acc, key) do
-          current when is_binary(current) -> Map.put(acc, key, current <> new)
-          _ -> Map.put(acc, key, new)
-        end
-
-      _key_value, acc ->
-        acc
-    end)
-  end
 
   defp finalize(state) do
     case state.tool_calls do
@@ -203,21 +167,11 @@ defmodule Ella.Llm.Adapters.OpenAI do
         %{"role" => "assistant", "content" => state.text}
 
       calls ->
-        rendered =
-          calls
-          |> Enum.with_index(1)
-          |> Enum.map(fn {call, n} ->
-            %{
-              "id" => call["id"] || "call_#{n}",
-              "type" => "function",
-              "function" => %{
-                "name" => get_in(call, ["function", "name"]),
-                "arguments" => get_in(call, ["function", "arguments"]) || "{}"
-              }
-            }
-          end)
-
-        %{"role" => "assistant", "content" => state.text, "tool_calls" => rendered}
+        %{
+          "role" => "assistant",
+          "content" => state.text,
+          "tool_calls" => ToolCalls.render(calls)
+        }
     end
   end
 

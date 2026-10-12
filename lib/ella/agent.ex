@@ -379,14 +379,18 @@ defmodule Ella.Agent do
 
   # --- Agentic Loop ---
 
-  defp run_loop(_messages, _active_tools, state, current_iter)
+  defp run_loop(messages, _active_tools, state, current_iter)
        when current_iter >= state.max_iterations do
     notice =
       "Iteration limit reached (#{state.max_iterations}). " <>
         "Stopping the loop and returning control to the user."
 
     Owl.IO.puts(Owl.Data.tag(notice, :yellow))
-    {:ok, notice, state.usage}
+
+    # Форма повернення має збігатися з handle_call: історія, текст
+    # відповіді та облік. Раніше тут бракувало повідомлень, тож
+    # досягнення ліміту ламало весь агентський цикл.
+    {:ok, messages, notice, state.usage}
   end
 
   defp run_loop(messages, active_tools, state, current_iter) do
@@ -483,6 +487,10 @@ defmodule Ella.Agent do
     case LlmClient.chat_completion(context_messages, active_tools, llm_opts) do
       {:ok, %{"tool_calls" => tool_calls} = message, usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
+        # API вимагає role у кожному повідомленні, але не всі адаптери
+        # її проставлять для відповіді з викликами інструментів.
+        message = Map.put_new(message, "role", "assistant")
+
         state =
           state
           |> calibrate(context_messages, usage)

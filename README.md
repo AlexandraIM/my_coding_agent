@@ -334,6 +334,14 @@ Because "four characters per token" is only a rough guess, the agent calibrates 
 against the real `prompt_tokens` the provider returns for each request. The ratio is smoothed and
 clamped, so a single unusual prompt cannot throw every later estimate off.
 
+### Tool calls
+
+Providers stream a tool call in pieces: the name arrives first, then the arguments as fragments of
+JSON. Both adapters accumulate those fragments by their index into a single call, so a tool
+invocation split across ten chunks arrives at the agent as one executable call rather than ten
+half-built ones. Provider-specific shapes (flat `name`/`arguments`, a missing `id`) are normalised
+to the same structure before the agent sees them.
+
 ## Typical Workflow
 
 The recommended workflow for using Ella is as follows:

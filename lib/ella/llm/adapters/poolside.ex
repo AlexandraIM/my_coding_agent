@@ -1,7 +1,7 @@
 defmodule Ella.Llm.Adapters.Poolside do
   @behaviour Ella.Llm.Adapter
 
-  alias Ella.Llm.{Error, Usage}
+  alias Ella.Llm.{Error, ToolCalls, Usage}
   alias Ella.Stream
 
   @impl true
@@ -116,7 +116,7 @@ defmodule Ella.Llm.Adapters.Poolside do
         end
 
       %{"tool_calls" => [call | _]} when is_map(call) ->
-        Agent.update(state, &%{&1 | tool_calls: &1.tool_calls ++ [call]})
+        Agent.update(state, &%{&1 | tool_calls: ToolCalls.merge(&1.tool_calls, call)})
         :ok
 
       _ ->
@@ -149,8 +149,15 @@ defmodule Ella.Llm.Adapters.Poolside do
     }
   end
 
+  # Агент чекає узгоджену форму викликів: нормалізовані поля,
+  # навіть якщо провайдер надсилав їх частинами або без id.
   defp normalize_response(body) do
-    %{"content" => body["text"], "tool_calls" => body["tool_calls"]}
+    calls = body["tool_calls"] || []
+
+    %{
+      "content" => body["text"],
+      "tool_calls" => if(calls == [], do: nil, else: ToolCalls.render(calls))
+    }
   end
 
   defp build_req(config) do
