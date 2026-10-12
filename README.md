@@ -171,26 +171,7 @@ Commands that would destroy state irreversibly (`rm`, `sudo`, `git reset --hard`
 
 This ensures a precise rollback without touching your uncommitted work or requiring a git repository.
 
-## Installation
-
-### For users (no Erlang needed)
-
-Someone hands you a single file for your platform and you run it — it bundles
-the BEAM runtime, so nothing needs to be installed:
-
-```sh
-./ella_native                       # macOS (Apple Silicon)
-```
-
-Then set an API key, e.g. `export OPENAI_API_KEY=sk-...`, and start typing.
-The first launch unpacks itself into `~/.burrito/` (about 28 MB) and reuses
-that copy from then on.
-
-There is no release to download yet: binaries are built from the repository, and
-each platform gets its own (see [Standalone binaries](#standalone-binaries))
-— the repository must first publish them as release artifacts.
-
-### For developers
+## Prerequisites
 
 | Requirement | Minimum | Why |
 |---|---|---|
@@ -201,77 +182,71 @@ each platform gets its own (see [Standalone binaries](#standalone-binaries))
 | **Git** | any | Snapshot backups and project detection |
 | **ripgrep** (optional) | any | Speeds up `grep` tool — falls back to built-in walker if missing |
 
-### macOS (Homebrew)
+### OS-Specific Setup
 
+**macOS (Homebrew)**
 ```sh
-# Erlang + Elixir (same formula pulls both)
-brew install elixir
-
-# Optional: faster search
-brew install ripgrep
-
-# Clone and build
-git clone <repo-url>
-cd my_coding_agent
-mix deps.get
-mix escript.build   # produces ./ella
+brew install elixir ripgrep
 ```
 
-### Linux (apt)
-
+**Linux (apt)**
 ```sh
-# Elixir (includes Erlang/OTP)
-sudo apt update
-sudo apt install -y curl gnupg
+sudo apt update && sudo apt install -y curl gnupg
 curl -fsSL https://packages.elixir-lang.org/elastic/elixir/elixir.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/elixir-archive-keyring.gpg
 echo "deb https://packages.elixir-lang.org/elastic/elixir ubuntu-main stable" | sudo tee /etc/apt/sources.list.d/elixir.list
-sudo apt update
-sudo apt install -y elixir
-
-# Optional
-sudo apt install -y ripgrep
-
-git clone <repo-url>
-cd my_coding_agent
-mix deps.get
-mix escript.build
+sudo apt update && sudo apt install -y elixir ripgrep
 ```
 
-### Building the standalone binary
-
-To produce a binary that runs without Erlang (what you hand to testers):
-
-```sh
-brew install zig xz          # macOS; on Linux: apt install zig xz-utils
-mix deps.get
-MIX_ENV=prod mix release     # outputs to burrito_out/
-```
-
-The output is `burrito_out/ella_native`, runnable on the machine you built it
-on. See [Standalone binaries](#standalone-binaries) for how that works, and for
-handing it to people on other platforms.
-
-### Windows (Scoop)
-
+**Windows (Scoop)**
 ```powershell
-scoop install elixir
-scoop install ripgrep
-
-git clone <repo-url>
-cd my_coding_agent
-mix deps.get
-mix escript.build
+scoop install elixir ripgrep
 ```
-
-> Burrito does not support building *on* Windows. Use WSL if that is your
-> development machine — it produces a Linux binary, which is what a WSL tester
-> can run anyway.
 
 > **Tip:** On all platforms, `kiex` or `asdf` can pin exact Elixir/OTP versions per-project.
 
-### API Key
+## Getting Started
 
-Ella needs an LLM provider. Set the environment variable for your chosen provider:
+
+Depending on your goals, choose one of the following ways to run Ella.
+
+### 🚀 Quick Start (Developer Mode)
+The fastest way to start interacting with the agent without building any binaries:
+
+```sh
+# 1. Install dependencies
+mix deps.get
+
+# 2. Start the interactive shell
+iex -S mix
+```
+
+Then, inside the Elixir shell, run:
+```elixir
+Ella.start_cli()
+```
+
+### 🛠️ Build a Local CLI
+If you want a convenient command-line tool that requires Erlang to be installed on your machine:
+
+```sh
+mix escript.build   # produces ./ella
+./ella
+```
+
+### 📦 Build a Standalone Binary (No Erlang needed)
+To create a self-contained executable that you can share with others (bundles the BEAM runtime):
+
+```sh
+# Requires Zig and xz (see Installation)
+MIX_ENV=prod mix release     # produces ./burrito_out/ella_native
+```
+See [Standalone binaries](#standalone-binaries) for more details.
+
+---
+
+## Configuration (API Keys)
+
+Ella requires an LLM provider. Set the environment variable for your chosen provider before starting:
 
 **OpenAI** (default):
 ```sh
@@ -293,61 +268,17 @@ export MISTRAL_API_KEY="..."
 **Ollama** (local):
 ```sh
 export LLM_PROVIDER=ollama
-export LLM_MODEL="gemma4:31b-cloud"  # optional, see defaults below
+export LLM_MODEL="gemma4:31b-cloud"  # optional
 ```
 
 **OpenCode-compatible** (local):
 ```sh
 export LLM_PROVIDER=opencode
-export OPENCODE_API_KEY="..."        # optional, "free" by default
+export OPENCODE_API_KEY="..."        # optional
 export OPENCODE_BASE_URL="http://localhost:4096/v1"  # optional
 ```
 
 The model defaults to `gpt-4o` (OpenAI), `poolside-code` (Poolside), `codestral-latest` (Mistral), `gemma4:31b-cloud` (Ollama). Override with `LLM_MODEL`.
-
-### Running
-
-After building:
-
-```sh
-./ella              # interactive CLI — needs a real terminal (TTY)
-```
-
-Or without building a binary:
-
-```sh
-iex -S mix
-iex> Ella.start_cli()
-```
-
-The CLI is interactive — it will not work when piped into `head` or run from a non-TTY script.
-
-## Quick Start Guide
-
-### Running from source
-
-```sh
-iex -S mix
-```
-
-then:
-
-```elixir
-Ella.start_cli()
-```
-
-### Building a single-file CLI
-
-```sh
-mix escript.build   # produces ./ella, ~2 MB, needs Erlang on the machine
-./ella
-```
-
-To hand the binary to someone without Erlang, build the Burrito release
-instead — see [Standalone binaries](#standalone-binaries).
-
-The CLI is interactive, so it needs a real terminal. It will not work when
-piped into `head` or run from a script without a TTY.
 
 ### CLI Commands
 
