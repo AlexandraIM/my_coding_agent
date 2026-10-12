@@ -83,6 +83,27 @@ agent internals, so each repository can pick its own trade-off between cost and 
 Non-integer or non-positive values are ignored and the default is used instead — a typo in the
 config should not leave the agent without limits.
 
+Non-integer or non-positive values are ignored and the default is used instead — a typo in the
+config should not leave the agent without limits.
+
+## System prompt
+
+The system prompt is assembled by `lib/ella/prompt.ex` from four sections, each specific to the
+active mode, followed by the project rules and the skill catalog:
+
+1. **Role** — what the mode is for and its hard rules.
+2. **Tools** — when to reach for each one. Tool *schemas* only describe argument shapes; this is
+   where the agent learns that `apply_patch` knows the SEARCH/REPLACE format, that a first-class
+   edit is safer than a rewrite, and that every change is backed up so `/rewind` exists.
+3. **Working process** — minimal edits, verify before claiming, and the rule that a test only counts
+   if it was actually run and seen to pass.
+4. **Output format** — what to report and what to leave out (never the diff, which the user already
+   has).
+
+Keeping the prompt in its own module means it can be read and tested without starting the agent —
+`test/ella/prompt_test.exs` asserts both modes mention their sections and that plan mode offers no
+file-modification tools at all.
+
 ## Skills
 
 Skills are Markdown files with YAML-style frontmatter that add project-specific

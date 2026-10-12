@@ -309,39 +309,17 @@ defmodule Ella.Agent do
   end
 
   defp update_system_prompt(%{mode: :plan} = state) do
-    prompt =
-      """
-      You are an AI Architect working in PLAN MODE.
-      Your goal is to analyze the codebase, ask clarifying questions, and design a detailed, step-by-step implementation plan.
-
-      STRICT RULES FOR PLAN MODE:
-      1. DO NOT write or modify any files. File modification tools are DISABLED.
-      2. Explore before proposing: start with `list_dir`, then use `grep` and `glob`
-         to locate the relevant code, and read only the files that matter.
-      3. Use `read_file` with `offset`/`limit` for large files instead of reading them whole.
-      4. Output your plan in clean Markdown with numbered steps.
-      5. Ask the user if they agree with the plan before proceeding to Build Mode.
-      6. Always respond to the user in the language they used (e.g., Ukrainian).
-      """ <> state.project_rules <> skills_catalog(state)
-
-    set_system_message(state, prompt)
+    set_system_message(
+      state,
+      Ella.Prompt.build(:plan, state.project_rules, skills_catalog(state))
+    )
   end
 
   defp update_system_prompt(%{mode: :build} = state) do
-    prompt =
-      """
-      You are an AI Software Engineer working in BUILD MODE.
-      Your goal is to execute the agreed implementation plan accurately.
-
-      STRICT RULES FOR BUILD MODE:
-      1. Inspect relevant files before editing. Locate them with `grep`/`glob` rather than
-         guessing paths, and use `read_file` with offset/limit for large files.
-      2. Prefer precise edits using `apply_patch` instead of overwriting files.
-      3. Run checks/tests via `system_exec` after edits.
-      4. Always respond to the user in the language they used (e.g., Ukrainian).
-      """ <> state.project_rules <> skills_catalog(state)
-
-    set_system_message(state, prompt)
+    set_system_message(
+      state,
+      Ella.Prompt.build(:build, state.project_rules, skills_catalog(state))
+    )
   end
 
   defp skills_catalog(state), do: Ella.Skills.catalog(state.skills)
