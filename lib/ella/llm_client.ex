@@ -270,6 +270,21 @@ defmodule Ella.LlmClient do
   end
 
   @doc """
+  Перевіряє, що провайдер відповідає: робить мінімальний запит.
+  Повертає :ok або {:error, reason}.
+  """
+  def validate(opts) when is_list(opts) do
+    opts = Keyword.put(opts, :on_text, fn _ -> :ok end)
+    opts = Keyword.put(opts, :max_attempts, 1)
+
+    case chat_completion([%{"role" => "user", "content" => "ping"}], [], opts) do
+      {:ok, _, _} -> :ok
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
   Готові llm_opts для заданого провайдера.
   """
   def provider_opts(provider) when is_binary(provider) do

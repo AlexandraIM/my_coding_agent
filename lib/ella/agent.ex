@@ -135,15 +135,22 @@ defmodule Ella.Agent do
   @impl true
   def handle_call({:set_provider, provider}, _from, state) do
     llm_opts = Ella.LlmClient.provider_opts(provider)
-    new_state = %{state | provider: provider, llm_opts: llm_opts}
-    publish_context(new_state)
 
-    config = Keyword.get(llm_opts, :config, [])
-    config_map = Map.new(config, fn {k, v} -> {to_string(k), v} end)
-    Ella.Storage.save_provider(provider, config_map)
+    case Ella.LlmClient.validate(llm_opts) do
+      :ok ->
+        new_state = %{state | provider: provider, llm_opts: llm_opts}
+        publish_context(new_state)
 
-    Owl.IO.puts(Owl.Data.tag("Switched provider to #{provider}.", :magenta))
-    {:reply, {:ok, provider}, new_state}
+        config = Keyword.get(llm_opts, :config, [])
+        config_map = Map.new(config, fn {k, v} -> {to_string(k), v} end)
+        Ella.Storage.save_provider(provider, config_map)
+
+        Owl.IO.puts(Owl.Data.tag("Switched provider to #{provider}.", :magenta))
+        {:reply, {:ok, provider}, new_state}
+
+      {:error, reason} ->
+        {:reply, {:error, Ella.Llm.Error.message(reason)}, state}
+    end
   end
 
   @impl true

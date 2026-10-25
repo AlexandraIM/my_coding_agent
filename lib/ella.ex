@@ -239,6 +239,15 @@ defmodule Ella do
           end
         end
 
+        case Ella.LlmClient.validate(Ella.LlmClient.provider_opts(provider)) do
+          :ok ->
+            Owl.IO.puts(Owl.Data.tag("Connection OK.", :green))
+
+          {:error, reason} ->
+            Owl.IO.puts(Owl.Data.tag("Connection failed: #{Ella.Llm.Error.message(reason)}", :red))
+        end
+
+        Ella.Storage.save_provider(provider)
         :ok
       end
     end
