@@ -43,7 +43,6 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("Type /help for the full command list.", :white))
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
-    print_setup()
     loop(pid, :plan)
   end
 
@@ -452,7 +451,7 @@ defmodule Ella do
       end
 
     IO.puts("")
-    Owl.IO.puts(Owl.Data.tag("─" <> String.duplicate("─", 58), :text_muted))
+    Owl.IO.puts(Owl.Data.tag("─" <> String.duplicate("─", 58), :magenta))
 
     Owl.IO.puts([
       Owl.Data.tag("You [", mode_color),
@@ -460,7 +459,12 @@ defmodule Ella do
       Owl.Data.tag("] ", mode_color)
     ])
 
-    input = Owl.IO.input(label: "") |> String.trim()
+    input =
+      case Owl.IO.input(label: "You") do
+        nil -> ""
+        value -> value
+      end
+      |> String.trim()
 
     cond do
       input == "/exit" ->

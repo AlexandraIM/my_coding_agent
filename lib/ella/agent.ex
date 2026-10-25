@@ -94,8 +94,6 @@ defmodule Ella.Agent do
       Owl.IO.puts(Owl.Data.tag("Loaded #{length(skills)} project skill(s)", :magenta))
     end
 
-    # Бюджет береться з конфігу, але явна опція агента має пріоритет:
-    # тести й вкладені агенти передають власні межі.
     context_opts =
       opts
       |> Keyword.take([
@@ -634,8 +632,8 @@ defmodule Ella.Agent do
 
         updated_messages = original_messages ++ [message]
 
-        tool_results_messages =
-          Enum.map(tool_calls, fn call ->
+        {tool_results_messages, state} =
+          Enum.reduce(tool_calls, {[], state}, fn call, {results, acc_state} ->
             tool_name = call["function"]["name"]
             call_id = call["id"]
 
@@ -644,9 +642,11 @@ defmodule Ella.Agent do
               compact_args(tool_name, call["function"]["arguments"])
             ])
 
-            result_text = execute_tool_call(call, tool_name, tool_map, state.mode)
+            {result_text, new_state} =
+              execute_tool_call(call, tool_name, tool_map, acc_state)
 
-            %{"role" => "tool", "tool_call_id" => call_id, "content" => result_text}
+            {results ++ [%{"role" => "tool", "tool_call_id" => call_id, "content" => result_text}],
+             new_state}
           end)
 
         state =
@@ -659,7 +659,7 @@ defmodule Ella.Agent do
 
         run_loop(
           updated_messages ++ tool_results_messages,
-          active_tools,
+          get_active_tools(state),
           state,
           current_iter + 1
         )
@@ -741,15 +741,6 @@ defmodule Ella.Agent do
     end
   end
 
-  # Інструмент працює у процесі агента, тому може оновити стан
-  # напряму. Повертає nil, якщо це не load_skill, і виклик іде
-  # далі звичайним шляхом.
-  defp activate_skill("load_skill", %{"name" => name}) when is_binary(name) do
-    GenServer.call(self(), {:activate_skill, name})
-  end
-
-  defp activate_skill(_tool_name, _args), do: nil
-
   defp build_tool_map(tools) do
     Enum.into(tools, %{}, fn
       %{name: name} = mcp_tool -> {name, mcp_tool}
@@ -757,15 +748,33 @@ defmodule Ella.Agent do
     end)
   end
 
-  defp execute_tool_call(call, tool_name, tool_map, mode) do
+  defp execute_tool_call(call, tool_name, tool_map, state) do
     encoded = call["function"]["arguments"]
 
     case Tool.parse_args(encoded) do
       {:ok, tool_args} ->
-        activate_skill(tool_name, tool_args) || execute_tool(tool_name, tool_args, tool_map, mode)
+        # Активуємо навичку напряму в стані агента (ми вже всередині
+        # GenServer-процесу, тому GenServer.call(self()) тут дедлок).
+        new_state =
+          if tool_name == "load_skill" and is_binary(tool_args["name"]) do
+            case Ella.Skills.find(state.skills, tool_args["name"]) do
+              {:ok, skill} ->
+                updated = %{state | active_skill: skill}
+                publish_context(updated)
+                updated
+
+              {:error, _} ->
+                state
+            end
+          else
+            state
+          end
+
+        result = execute_tool(tool_name, tool_args, tool_map, state.mode)
+        {result, new_state}
 
       {:error, reason} ->
-        "ERROR: #{reason}"
+        {"ERROR: #{reason}", state}
     end
   end
 
