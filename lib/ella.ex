@@ -37,7 +37,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [name|list], /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
+      "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [name|list], /save [name], /load [name], /sessions, /mcp list|<executable> [args...], /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -210,6 +210,25 @@ defmodule Ella do
     end
   rescue
     _ -> Owl.IO.puts("Provider switch is not available.")
+  end
+
+  defp print_mcp_servers do
+    servers = Ella.Storage.load_mcp_config()
+
+    if map_size(servers) == 0 do
+      Owl.IO.puts(Owl.Data.tag("No MCP servers registered.", :yellow))
+    else
+      Owl.IO.puts(Owl.Data.tag("Registered MCP servers:", :cyan))
+
+      Enum.each(servers, fn {name, config} ->
+        command = Map.get(config, "command", "unknown")
+        args = Map.get(config, "args", [])
+        args_str = if args == [], do: "", else: " " <> Enum.join(args, " ")
+        Owl.IO.puts("  #{name}: #{command}#{args_str}")
+      end)
+    end
+  rescue
+    _ -> Owl.IO.puts("MCP servers are not available.")
   end
 
   defp print_setup do
@@ -400,11 +419,20 @@ defmodule Ella do
         cmd_str = String.replace_prefix(input, "/mcp ", "")
 
         case String.split(cmd_str, " ", trim: true) do
+          ["list"] ->
+            print_mcp_servers()
+
           [exec | args] ->
-            Ella.Agent.register_mcp(pid, exec, args)
+            case Ella.Agent.register_mcp(pid, exec, args) do
+              {:ok, count} ->
+                Owl.IO.puts(Owl.Data.tag("Зареєстровано #{count} MCP tool(s) з #{exec}.", :green))
+
+              {:error, reason} ->
+                Owl.IO.puts(Owl.Data.tag("MCP registration failed: #{inspect(reason)}", :red))
+            end
 
           _ ->
-            Owl.IO.puts("Usage: /mcp <executable> [args...]")
+            Owl.IO.puts("Usage: /mcp list | /mcp <executable> [args...]")
         end
 
         loop(pid)

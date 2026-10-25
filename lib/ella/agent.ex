@@ -69,7 +69,8 @@ defmodule Ella.Agent do
         Ella.Tools.ApplyPatch,
         Ella.Tools.SystemExec,
         Ella.Tools.DelegateTask,
-        Ella.Tools.LoadSkill
+        Ella.Tools.LoadSkill,
+        Ella.Tools.WebSearch
       ])
 
     llm_opts =
@@ -251,10 +252,13 @@ defmodule Ella.Agent do
 
   def handle_call(:active_tools, _from, state) do
     tools = get_active_tools(state)
-    names = Enum.map(tools, fn
-      %{name: name} -> name
-      module -> module.name()
-    end)
+
+    names =
+      Enum.map(tools, fn
+        %{name: name} -> name
+        module -> module.name()
+      end)
+
     {:reply, names, state}
   end
 
@@ -336,8 +340,8 @@ defmodule Ella.Agent do
   # У plan mode агент може читати й шукати, але не може змінювати стан.
   # system_exec тут свідомо відсутній: через шелл можна і писати
   # (`> file`), і видаляти.
-  @plan_mode_tools ~w(read_file grep glob list_dir delegate_task load_skill)
-  @review_mode_tools ~w(read_file grep glob list_dir system_exec delegate_task load_skill)
+  @plan_mode_tools ~w(read_file grep glob list_dir delegate_task load_skill web_search)
+  @review_mode_tools ~w(read_file grep glob list_dir system_exec delegate_task load_skill web_search)
 
   defp get_active_tools(%{mode: :review} = state) do
     %{all_tools: tools, mcp_tools: mcp_tools} = state
@@ -614,10 +618,10 @@ defmodule Ella.Agent do
 
             Owl.IO.puts([
               Owl.Data.tag("Tool Call [#{tool_name}]: ", :yellow),
-              inspect(call["function"]["arguments"])
+              compact_args(tool_name, call["function"]["arguments"])
             ])
 
-            result_text = execute_tool_call(call, tool_name, tool_map)
+            result_text = execute_tool_call(call, tool_name, tool_map, state.mode)
 
             %{"role" => "tool", "tool_call_id" => call_id, "content" => result_text}
           end)
@@ -662,33 +666,56 @@ defmodule Ella.Agent do
     end
   end
 
-  # Під час стріму текст уже надруковано по фрагментах, тому
-  # друкуємо лише перенос рядка, щоб не продублювати його.
+  # Під час стріму фрагменти приховані — модель може думати голосно
+  # ("Wait", "Actually" тощо), це не слід показувати користувачу.
+  # Показуємо лише фінальну відповідь після завершення потоку.
   defp finish_turn(content) do
-    if streamed?() do
-      IO.puts("")
-      IO.puts("")
-    else
-      Owl.IO.puts([Owl.Data.tag("Agent: ", :blue), content])
+    IO.puts("")
+    Owl.IO.puts([Owl.Data.tag("Agent: ", :blue), content])
+    IO.puts("")
+  end
+
+  # Під час стріму фрагменти не друкуємо, щоб не витікав внутрішній
+  # монотет моделі. Лише встановлюємо прапор стрімування для finish_turn.
+  defp streaming_opts(state) do
+    Keyword.put(state.llm_opts, :on_text, fn _fragment ->
+      :ok
+    end)
+  end
+
+  # Компактне підсумок аргументів виклику інструмента, щоб не виводити
+  # увесь JSON у консоль.
+  defp compact_args(_tool_name, args) when is_binary(args) do
+    case Jason.decode(args) do
+      {:ok, %{"path" => path} = _} ->
+        "path=#{path}"
+
+      {:ok, %{"command" => command} = _} ->
+        "cmd=#{truncate(command)}"
+
+      {:ok, %{"pattern" => pattern} = _} ->
+        "pattern=#{truncate(pattern)}"
+
+      {:ok, %{"query" => query} = _} ->
+        "query=#{truncate(query)}"
+
+      {:ok, map} ->
+        keys = Map.keys(map) |> Enum.join(", ") |> truncate()
+        keys
+
+      :error ->
+        truncate(args)
     end
   end
 
-  defp streamed?, do: Process.get(:ella_streaming, false)
+  defp compact_args(_tool_name, args), do: inspect(args) |> truncate()
 
-  # Під час стріму друкуємо фрагменти як є: довгі рядки через Owl
-  # зливались б в один, а короткі не переносилися б.
-  defp streaming_opts(state) do
-    Keyword.put(state.llm_opts, :on_text, fn fragment ->
-      Process.put(:ella_streaming, true)
-
-      if String.length(fragment) > 80 do
-        Owl.IO.puts(Owl.Data.tag(fragment, :blue))
-      else
-        IO.write(fragment)
-      end
-
-      :ok
-    end)
+  defp truncate(text) when is_binary(text) do
+    if String.length(text) > 100 do
+      String.slice(text, 0, 100) <> "..."
+    else
+      text
+    end
   end
 
   # Інструмент працює у процесі агента, тому може оновити стан
@@ -707,19 +734,19 @@ defmodule Ella.Agent do
     end)
   end
 
-  defp execute_tool_call(call, tool_name, tool_map) do
+  defp execute_tool_call(call, tool_name, tool_map, mode) do
     encoded = call["function"]["arguments"]
 
     case Tool.parse_args(encoded) do
       {:ok, tool_args} ->
-        activate_skill(tool_name, tool_args) || execute_tool(tool_name, tool_args, tool_map)
+        activate_skill(tool_name, tool_args) || execute_tool(tool_name, tool_args, tool_map, mode)
 
       {:error, reason} ->
         "ERROR: #{reason}"
     end
   end
 
-  defp execute_tool(name, args, tool_map) do
+  defp execute_tool(name, args, tool_map, mode) do
     case Map.fetch(tool_map, name) do
       {:ok, %{type: :mcp, mcp_pid: pid, raw_name: raw_name}} ->
         try do
@@ -742,7 +769,22 @@ defmodule Ella.Agent do
         end
 
       :error ->
-        "ERROR: Tool '#{name}' is disabled or not registered."
+        disabled_msg =
+          case mode do
+            :plan when name in ~w(write_file apply_patch) ->
+              " It is disabled in PLAN mode. Use `/build` to enable file editing."
+
+            :plan when name == "system_exec" ->
+              " It is disabled in PLAN mode. Use `/review` or `/build` to run commands."
+
+            :review when name in ~w(write_file apply_patch) ->
+              " It is disabled in REVIEW mode. Use `/build` to enable file editing."
+
+            _ ->
+              ""
+          end
+
+        "ERROR: Tool '#{name}' is disabled or not registered.#{disabled_msg}"
     end
   end
 

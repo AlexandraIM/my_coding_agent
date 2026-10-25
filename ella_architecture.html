@@ -297,12 +297,18 @@
           flowchart TD
             User(["Користувач: Запит / План"]) --> Agent["Ella.Agent (GenServer)"]
             
+            subgraph Execution["Виконання"]
+              Agent --> SubAgent["Ella.SubAgent: Делегування"]
+              SubAgent --> Agent
+            end
+
             subgraph ContextMgmt ["Керування пам'яттю"]
               Agent --> CheckBudget{"Перевірка ліміту токенів?"}
               CheckBudget -- "Бюджет перевищено" --> ContextCompact["Ella.Context: Стиснення історії"]
               CheckBudget -- "В межах норми" --> LLMClient["Ella.LlmClient"]
               ContextCompact --> LLMClient
             end
+
 
             subgraph LLMExecution ["Виклик моделі"]
               LLMClient --> Stream["Ella.Stream: SSE Стрімінг & Повтори"]
@@ -350,6 +356,13 @@
           <div class="feature-title">Миттєвий відкат (/rewind)</div>
           <div class="feature-desc">
             <code>Ella.Snapshot</code> створює точкову копію кожного зміненого файлу. Команда <code>/rewind</code> повертає стан назад без впливу на git tree.
+          </div>
+        </div>
+        <div class="feature-box">
+          <div class="feature-icon">🧬</div>
+          <div class="feature-title">Рекурсивні під-агенти</div>
+          <div class="feature-desc">
+            <code>Ella.SubAgent</code> дозволяє основному агенту створювати ізольовані робочі потоки для підзадач, що запобігає "зашумленню" головного контексту.
           </div>
         </div>
       </div>
@@ -429,9 +442,9 @@
         </div>
         <div class="feature-box">
           <div class="feature-icon">📚</div>
-          <div class="feature-title">Skills з прогресивним розкриттям</div>
+          <div class="feature-title">Skills та Project Rules</div>
           <div class="feature-desc">
-            Кастомні Markdown-інструкції (наприклад, як запускати тести або правила стилю проєкту). Завдяки <strong>progressive disclosure</strong>, тіло інструкції підвантажується в контекст лише тоді, коли воно дійсно потрібне, заощаджуючи до 80% контексту.
+            Кастомні Markdown-інструкції та <code style="color: var(--accent-secondary)">Ella.ProjectRules</code>. Завдяки <strong>progressive disclosure</strong>, тіло інструкції підвантажується в контекст лише тоді, коли воно дійсно потрібне, заощаджуючи до 80% контексту.
           </div>
         </div>
       </div>
@@ -480,6 +493,12 @@
               <td><span class="check">✓ Миттєва (Escript / Burrito binary)</span></td>
               <td>Повільна (важкий Python venv)</td>
               <td>Середня (Node.js runtime)</td>
+            </tr>
+            <tr>
+              <td><strong>Розповсюдження</strong></td>
+              <td><span class="check">✓ Zero-dependency (Self-contained binary)</span></td>
+              <td>Потребує Python + Pip</td>
+              <td>Потребує Node.js runtime</td>
             </tr>
           </tbody>
         </table>

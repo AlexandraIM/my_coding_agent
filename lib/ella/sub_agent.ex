@@ -164,7 +164,7 @@ defmodule Ella.SubAgent do
 
                 Owl.IO.puts([
                   Owl.Data.tag("  [SubAgent Tool]: #{tool_name} ", :yellow),
-                  inspect(call["function"]["arguments"])
+                  compact_args(tool_name, call["function"]["arguments"])
                 ])
 
                 result_text = execute_tool_call(call, tool_name, state.tool_map)
@@ -203,17 +203,45 @@ defmodule Ella.SubAgent do
   end
 
   defp streaming_opts(llm_opts) do
-    Keyword.put(llm_opts, :on_text, fn fragment ->
-      Process.put(:ella_streaming, true)
-
-      if String.length(fragment) > 80 do
-        Owl.IO.puts(Owl.Data.tag(fragment, :blue))
-      else
-        IO.write(fragment)
-      end
-
+    # Сабагентовий потік прихований — тільки фінальний підсумок.
+    Keyword.put(llm_opts, :on_text, fn _fragment ->
       :ok
     end)
+  end
+
+  # Компактне підсумок аргументів виклику інструмента, щоб не виводити
+  # увесь JSON у консоль.
+  defp compact_args(_tool_name, args) when is_binary(args) do
+    case Jason.decode(args) do
+      {:ok, %{"path" => path} = _} ->
+        "path=#{path}"
+
+      {:ok, %{"command" => command} = _} ->
+        "cmd=#{truncate(command)}"
+
+      {:ok, %{"pattern" => pattern} = _} ->
+        "pattern=#{truncate(pattern)}"
+
+      {:ok, %{"query" => query} = _} ->
+        "query=#{truncate(query)}"
+
+      {:ok, map} ->
+        keys = Map.keys(map) |> Enum.join(", ") |> truncate()
+        keys
+
+      :error ->
+        truncate(args)
+    end
+  end
+
+  defp compact_args(_tool_name, args), do: inspect(args) |> truncate()
+
+  defp truncate(text) when is_binary(text) do
+    if String.length(text) > 100 do
+      String.slice(text, 0, 100) <> "..."
+    else
+      text
+    end
   end
 
   defp execute_tool_call(call, tool_name, tool_map) do

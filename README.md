@@ -6,9 +6,10 @@ Ella is an AI-powered coding assistant built in Elixir. It utilizes an agentic l
 
 For a detailed visual overview of how the system is structured, see [ella_architecture.html](./ella_architecture.html).
 
-The agent operates in two distinct modes to ensure safety and architectural integrity:
+The agent operates in three distinct modes to ensure safety and architectural integrity:
 
 - **Plan Mode**: A read-only mode used for exploration, analysis, and architectural design. In this mode, the agent can read files and execute certain commands but cannot modify the codebase.
+- **Review Mode**: A verification mode. It remains read-only for files but allows executing system commands (e.g., running tests) to verify the current state of the project.
 - **Build Mode**: A full-access mode used for implementation. In this mode, the agent can write files, apply patches, and execute system commands to implement the agreed-upon plan.
 
 ## Model Context Protocol (MCP) Integration
@@ -19,27 +20,27 @@ Ella fully supports the **Model Context Protocol (MCP)**, enabling it to connect
 
 Ella is equipped with a powerful set of tools to interact with the environment:
 
-### Navigation (read-only, available in Plan Mode)
+### Navigation & Analysis (available in Plan Mode)
 
 - `list_dir`: Lists a directory as a tree with file sizes. Use this first to understand project structure.
 - `glob`: Finds files matching a pattern, e.g. `lib/**/*.ex`.
 - `grep`: Searches file contents with a regular expression. Returns `file:line` hits. Uses ripgrep when available, otherwise falls back to a built-in walker.
 - `read_file`: Reads a file. Supports `offset`/`limit` for reading large files in parts.
+- `delegate_task`: Spawns autonomous sub-agents to handle isolated sub-tasks (research, fixing, testing). This allows the primary agent to maintain focus while complex components are handled in parallel or in isolation.
+- `load_skill`: Reads the full text of a project skill (see below).
 
 ### Modification (Build Mode only)
 
 - `write_file`: Creates or completely overwrites a file.
 - `apply_patch`: Performs precise search-and-replace operations within a file. Refuses ambiguous search strings.
 
-### Execution (Build Mode only)
+### Execution (Review & Build Mode)
 
 - `system_exec`: Executes terminal commands through a shell (pipes, `&&`, redirection supported), with a timeout and output truncation.
-- `delegate_task`: Spawns autonomous sub-agents to handle isolated sub-tasks (research, fixing, testing). This allows the primary agent to maintain focus while complex components are handled in parallel or in isolation.
 
 ### Extensions
 
 - `MCP Tools`: Dynamically loaded tools provided by connected MCP servers. Tools that do not declare `readOnlyHint` are hidden in Plan Mode.
-- `load_skill`: Reads the full text of a project skill (see below).
 
 ## Protected files
 
@@ -285,6 +286,7 @@ The model defaults to `gpt-4o` (OpenAI), `poolside-code` (Poolside), `codestral-
 | Command | Action |
 | :--- | :--- |
 | `/plan` | Switch to **Plan Mode** (Read-only architectural design) |
+| `/review` | Switch to **Review Mode** (Read-only files, executable commands) |
 | `/build` | Switch to **Build Mode** (Full access for implementation) |
 | `/execute` | Immediately switch to **Build Mode** and execute the current goal |
 | `/usage` | Show tokens and cost consumed this session |

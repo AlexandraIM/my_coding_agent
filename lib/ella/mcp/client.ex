@@ -28,21 +28,31 @@ defmodule Ella.Mcp.Client do
     exec_path = System.find_executable(executable) || executable
 
     port =
-      Port.open({:spawn_executable, exec_path}, [
-        :binary,
-        :stream,
-        :line,
-        args: args
-      ])
+      try do
+        Port.open({:spawn_executable, exec_path}, [
+          :binary,
+          :stream,
+          :line,
+          args: args
+        ])
+      rescue
+        e -> {:error, Exception.message(e)}
+      end
 
-    state = %{
-      port: port,
-      request_id: 1,
-      pending_requests: %{},
-      buffer: ""
-    }
+    case port do
+      {:error, reason} ->
+        {:error, reason}
 
-    {:ok, state, {:continue, :initialize}}
+      port ->
+        state = %{
+          port: port,
+          request_id: 1,
+          pending_requests: %{},
+          buffer: ""
+        }
+
+        {:ok, state, {:continue, :initialize}}
+    end
   end
 
   @impl true
