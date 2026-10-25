@@ -7,6 +7,7 @@ defmodule Ella.SubAgent do
   alias Ella.Context
   alias Ella.Llm.Usage
   alias Ella.LlmClient
+  alias Ella.Snapshot
   alias Ella.Tool
 
   # --- Client API ---
@@ -55,6 +56,11 @@ defmodule Ella.SubAgent do
 
   @impl true
   def init(opts) do
+    # Снапшот-сесія глобальна: головний агент її вже підняв, але
+    # сабагент може стартувати й окремо (тести, прямий виклик) —
+    # тоді WriteGuard не зможе записати резервну копію і заблокує запис.
+    Snapshot.ensure_started()
+
     task = Keyword.fetch!(opts, :task)
     tools = Keyword.get(opts, :tools, all_tools())
 
