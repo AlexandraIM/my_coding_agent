@@ -105,9 +105,18 @@ defmodule Ella.SubAgent do
   end
 
   defp run_loop(messages, state, current_iter) do
-    case LlmClient.chat_completion(messages, state.tools, state.llm_opts) do
+    Process.put(:ella_streaming, false)
+    opts = streaming_opts(state.llm_opts)
+
+    case LlmClient.chat_completion(messages, state.tools, opts) do
       {:ok, %{"tool_calls" => tool_calls} = message, _usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
+        message = Map.put_new(message, "role", "assistant")
+
+        if streamed?() do
+          IO.puts("")
+        end
+
         updated_messages = messages ++ [message]
 
         tool_results_messages =
@@ -127,14 +136,43 @@ defmodule Ella.SubAgent do
         run_loop(updated_messages ++ tool_results_messages, state, current_iter + 1)
 
       {:ok, %{"content" => content}, _usage} ->
+        finish_turn(content)
         {:ok, content || "Task completed."}
 
-      {:ok, _message, _usage} ->
-        {:ok, "Task completed."}
+      {:ok, message, _usage} ->
+        finish_turn(message["content"])
+        {:ok, message["content"] || "Task completed."}
 
       {:error, reason} ->
         {:error, Ella.Llm.Error.message(reason)}
     end
+  end
+
+  defp streamed?, do: Process.get(:ella_streaming, false)
+
+  defp finish_turn(nil), do: :ok
+
+  defp finish_turn(content) do
+    if streamed?() do
+      IO.puts("")
+      IO.puts("")
+    else
+      Owl.IO.puts([Owl.Data.tag("[SubAgent] ", :blue), content])
+    end
+  end
+
+  defp streaming_opts(llm_opts) do
+    Keyword.put(llm_opts, :on_text, fn fragment ->
+      Process.put(:ella_streaming, true)
+
+      if String.length(fragment) > 80 do
+        Owl.IO.puts(Owl.Data.tag(fragment, :blue))
+      else
+        IO.write(fragment)
+      end
+
+      :ok
+    end)
   end
 
   defp execute_tool_call(call, tool_name, tool_map) do
