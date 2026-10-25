@@ -130,9 +130,27 @@ defmodule Ella.Tools.SystemExec do
         # випадки, де `;` всередині рядка розбиває команду на сегменти
         # (наприклад, `python3 -c 'import os; os.system("rm")'`).
         case result do
-          :ok -> check_interpreter_bypass(command, segments)
+          :ok ->
+            case check_review_mode(command) do
+              {:error, _} = error -> error
+              :ok -> check_interpreter_bypass(command, segments)
+            end
           {:error, _} = error -> error
         end
+    end
+  end
+
+  defp check_review_mode(command) do
+    case Process.get(:ella_agent_mode) do
+      :review ->
+        # Блокуємо редірекцію, створення файлів, перезапис, видалення.
+        if String.match?(command, ~r/[<>]|>>|>\s|tee\s|cp\s|mv\s|rm\s|chmod\s|chown\s|dd\s|mkfs\s|git\s+(push|reset|clean|filter-branch|commit|checkout|merge|rebase|apply|stash|add|rm)\b/) do
+          {:error, "Mutating command blocked in REVIEW mode. Use read-only commands only (git diff, tests, linters)."}
+        else
+          :ok
+        end
+
+      _ -> :ok
     end
   end
 
