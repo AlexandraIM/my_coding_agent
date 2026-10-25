@@ -4,7 +4,7 @@ defmodule Ella.ProjectRules do
   """
 
   # Список файлів у порядку пріоритету
-  @rule_files ["AGENT.md", ".cursorrules", ".agentrules", "CLAUDE.md"]
+  @rule_files ["AGENTS.md", "AGENT.md", ".cursorrules", ".agentrules", "CLAUDE.md"]
 
   def load_rules(root_dir \\ File.cwd!()) do
     @rule_files

@@ -37,7 +37,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /review, /usage, /context, /skills, /protected, /limits, /rewind, /provider [name|list], /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
+      "Commands: /plan, /build, /review, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [name|list], /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -279,6 +279,42 @@ defmodule Ella do
   defp key_env_for("mistral"), do: "MISTRAL_API_KEY"
   defp key_env_for(_), do: "OPENAI_API_KEY"
 
+  defp print_init do
+    root = File.cwd!()
+    ella_dir = Path.join(root, ".ella")
+    skills_dir = Path.join(ella_dir, "skills")
+    config_path = Path.join(ella_dir, "config.json")
+    agents_path = Path.join(root, "AGENTS.md")
+
+    File.mkdir_p!(ella_dir)
+    File.mkdir_p!(skills_dir)
+
+    unless File.exists?(config_path) do
+      File.write!(config_path, Jason.encode!(%{
+        "protected_paths" => ["mix.exs", "mix.lock", ".formatter.exs", ".github/"],
+        "require_approval" => true,
+        "max_attempts" => 4,
+        "request_timeout_ms" => 120000,
+        "context_budget" => 120000,
+        "max_iterations" => 30
+      }, pretty: true))
+    end
+
+    unless File.exists?(agents_path) do
+      File.write!(agents_path, """
+      # Agent instructions
+
+      Describe project-specific rules for the coding agent here: how to run
+      tests, style conventions, architecture notes. The agent reads this file
+      at startup.
+      """)
+    end
+
+    Owl.IO.puts(Owl.Data.tag("Initialized .ella/ and AGENTS.md", :green))
+  rescue
+    e -> Owl.IO.puts(Owl.Data.tag("Init failed: #{Exception.message(e)}", :red))
+  end
+
   defp loop(pid) do
     input = Owl.IO.input(label: "You") |> String.trim()
 
@@ -341,6 +377,10 @@ defmodule Ella do
 
       input == "/review" ->
         Ella.Agent.set_mode(pid, :review)
+        loop(pid)
+
+      input == "/init" ->
+        print_init()
         loop(pid)
 
       String.starts_with?(input, "/mcp ") ->
