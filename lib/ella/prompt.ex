@@ -49,14 +49,16 @@ defmodule Ella.Prompt do
 
     STRICT RULES FOR PLAN MODE:
     1. DO NOT write or modify any files. File modification tools are DISABLED.
-    2. Explore before proposing: start with `list_dir`, then use `grep` and `glob`
+    2. If the user has not stated what to plan, ask them what they want to plan
+       before exploring the codebase.
+    3. Explore before proposing: start with `list_dir`, then use `grep` and `glob`
        to locate the relevant code, and read only the files that matter.
-    3. Use `read_file` with `offset`/`limit` for large files instead of reading them whole.
-    4. Output your plan in clean Markdown with numbered steps.
-    5. Ask the user if they agree with the plan before proceeding to Build Mode.
-    6. Do not run commands or tool calls that mutate state, even indirectly
+    4. Use `read_file` with `offset`/`limit` for large files instead of reading them whole.
+    5. Output your plan in clean Markdown with numbered steps.
+    6. Ask the user if they agree with the plan before proceeding to Build Mode.
+    7. Do not run commands or tool calls that mutate state, even indirectly
        (redirection, `rm`, `git checkout`, ...). Read-only tools only.
-    7. Always respond to the user in the language they used (e.g., Ukrainian).
+    8. Always respond to the user in the language they used (e.g., Ukrainian).
     """
   end
 

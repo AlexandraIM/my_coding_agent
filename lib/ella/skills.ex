@@ -122,7 +122,7 @@ defmodule Ella.Skills do
        description: Discipline for planning and architecture work
        tools: [list_dir, grep, glob, read_file, delegate_task]
        ---
-       Start with list_dir, then grep/glob. Name concrete files/functions in every step. Separate verified from inferred. Call out risks. Delegate isolated research. Ask approval before Build Mode.
+       If the user has not stated what to plan, ask them first. Start with list_dir, then grep/glob. Name concrete files/functions in every step. Separate verified from inferred. Call out risks. Delegate isolated research. Ask approval before Build Mode.
        """}
     ]
   end
