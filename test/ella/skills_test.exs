@@ -229,8 +229,11 @@ defmodule Ella.SkillsTest do
 
       previous_sandbox = Application.get_env(:ella, :sandbox_root)
       previous_global = Application.get_env(:ella, :global_skills_dir)
+      previous_seed = Application.get_env(:ella, :seed_default_skills)
       Application.put_env(:ella, :sandbox_root, root)
       Application.put_env(:ella, :global_skills_dir, Path.join(root, "global_skills"))
+      # Disable seeding to isolate tests from global skill seeding
+      Application.put_env(:ella, :seed_default_skills, false)
 
       on_exit(fn ->
         File.rm_rf(root)
@@ -245,6 +248,12 @@ defmodule Ella.SkillsTest do
           Application.delete_env(:ella, :global_skills_dir)
         else
           Application.put_env(:ella, :global_skills_dir, previous_global)
+        end
+
+        if is_nil(previous_seed) do
+          Application.delete_env(:ella, :seed_default_skills)
+        else
+          Application.put_env(:ella, :seed_default_skills, previous_seed)
         end
       end)
 

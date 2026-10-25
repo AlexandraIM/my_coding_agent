@@ -55,7 +55,7 @@ defmodule Ella.Skills do
   def load_all do
     maybe_seed_defaults()
 
-    global_dir = Path.join(global_dir(), "skills")
+    global_dir = global_dir()
     project_dir = Path.join(Sandbox.root(), ".ella/skills")
 
     global = load_dir(global_dir, :global)
