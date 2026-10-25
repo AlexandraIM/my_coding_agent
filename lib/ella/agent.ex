@@ -247,6 +247,15 @@ defmodule Ella.Agent do
     {:reply, Enum.map(state.skills, &{&1.name, &1.description}), state}
   end
 
+  def handle_call(:active_tools, _from, state) do
+    tools = get_active_tools(state)
+    names = Enum.map(tools, fn
+      %{name: name} -> name
+      module -> module.name()
+    end)
+    {:reply, names, state}
+  end
+
   @impl true
   def handle_call({:save_session, name}, _from, state) do
     data = %{
@@ -448,6 +457,9 @@ defmodule Ella.Agent do
   Список доступних навичок (назва та опис).
   """
   def skills(pid), do: GenServer.call(pid, :skills)
+
+  @doc "Returns active tool names for the current mode (for testing)."
+  def active_tools(pid), do: GenServer.call(pid, :active_tools)
 
   @doc "Зберігає поточну сесію під заданим ім'ям."
   def save_session(pid, name \\ "default") do

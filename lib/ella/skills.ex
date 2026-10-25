@@ -101,6 +101,29 @@ defmodule Ella.Skills do
     :ok
   end
 
+  @doc """
+  Seeds default skills to a specific directory (for testing).
+  """
+  def seed_defaults_to(dir) do
+    case Application.get_env(:ella, :seed_default_skills, false) do
+      true ->
+        File.mkdir_p!(dir)
+
+        Enum.each(default_skills(), fn {name, content} ->
+          path = Path.join(dir, name <> ".md")
+
+          unless File.exists?(path) do
+            File.write!(path, content)
+          end
+        end)
+
+        :ok
+
+      false ->
+        :ok
+    end
+  end
+
   defp default_skills do
     [
       {"verify",
