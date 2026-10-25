@@ -51,7 +51,11 @@ defmodule Ella.MixProject do
       ella: [
         steps: [:assemble, &Burrito.wrap/1],
         burrito: [
-          targets: [native: [os: native_os(), cpu: native_cpu()]],
+          targets: [
+            native: [os: native_os(), cpu: native_cpu()],
+            linux_x86_64: [os: :linux, cpu: :x86_64],
+            linux_arm64: [os: :linux, cpu: :aarch64]
+          ],
           # Реєструє наш ERTS-резолвер: без нього Burrito завантажує
           # готовий ERTS із свого CDN, якого для OTP 29.1.1 немає.
           extra_steps: [

@@ -18,7 +18,7 @@ defmodule Ella.ErtsResolver do
   @impl true
   def do_resolve(%Burrito.Builder.Target{} = target) do
     # :runtime змушує Burrito взяти ERTS з тієї машини, де йде
-    # збірка, замість завантаження готової.
+    # збірку, замість завантаження готового.
     %Burrito.Builder.Target{target | erts_source: {:runtime, :current_erts}}
   end
 end

@@ -332,19 +332,36 @@ defmodule Ella.LlmClient do
   end
 
   @doc """
-  Перевіряє, що провайдер відповідає: робить мінімальний запит.
-  Повертає :ok або {:error, reason}.
+  Перевіряє, що у конфігу є необхідні поля (api_key для провайдерів, що це вимагають).
+  Повертає :ok або {:error, reason}. Не робить реальний API-виклик.
   """
   def validate(opts) when is_list(opts) do
-    opts = Keyword.put(opts, :on_text, fn _ -> :ok end)
-    opts = Keyword.put(opts, :max_attempts, 1)
+    config = Keyword.get(opts, :config, [])
+    adapter = Keyword.get(opts, :adapter)
+    provider = provider_from_adapter(adapter)
 
-    case chat_completion([%{"role" => "user", "content" => "ping"}], [], opts) do
-      {:ok, _, _} -> :ok
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, reason}
+    case provider do
+      "ollama" -> :ok  # local, no key needed
+      "opencode" -> :ok  # often local, default key provided
+
+      _ ->
+        api_key = Keyword.get(config, :api_key)
+        if api_key == nil or api_key == "" do
+          {:error, "API key not set for #{provider}. Set #{key_env_for(provider)} or configure via /provider."}
+        else
+          :ok
+        end
     end
   end
+
+  defp provider_from_adapter(Ella.Llm.Adapters.Poolside), do: "poolside"
+  defp provider_from_adapter(_), do: "openai"
+
+  defp key_env_for("poolside"), do: "POOLSIDE_API_KEY"
+  defp key_env_for("mistral"), do: "MISTRAL_API_KEY"
+  defp key_env_for("openai"), do: "OPENAI_API_KEY"
+  defp key_env_for("opencode"), do: "OPENCODE_API_KEY"
+  defp key_env_for(_), do: "OPENAI_API_KEY"
 
   @doc """
   Готові llm_opts для заданого провайдера.

@@ -289,7 +289,12 @@ defmodule Ella.SkillsTest do
       assert [%Skills{name: "code style"}] = Skills.load_all()
     end
 
-    test "порожня директорія дає порожній список" do
+    test "порожня директорія дає порожній список", %{skills_dir: skills_dir} do
+      # Ensure both project and global skills dirs are empty
+      assert File.ls(skills_dir) == {:ok, []}
+      global_dir = Application.get_env(:ella, :global_skills_dir)
+      assert File.ls(global_dir) == {:ok, []}
+
       assert Skills.load_all() == []
     end
   end
