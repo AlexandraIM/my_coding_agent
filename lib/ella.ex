@@ -23,6 +23,8 @@ defmodule Ella do
     # застосунки, яким це потрібно, піднімаємо самі.
     {:ok, _} = Application.ensure_all_started(:ssl)
 
+    maybe_setup_provider()
+
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
@@ -197,6 +199,66 @@ defmodule Ella do
   rescue
     _ -> Owl.IO.puts("Provider switch is not available.")
   end
+
+  defp maybe_setup_provider do
+    # У неінтерактивному середовищі (CI, pipe) не блокуємо запуск.
+    unless interactive?() do
+      :ok
+    else
+      provider = System.get_env("LLM_PROVIDER") || "openai"
+
+      if provider_has_key?(provider) do
+        :ok
+      else
+        Owl.IO.puts(Owl.Data.tag("No API key found for '#{provider}'.", :yellow))
+        Owl.IO.puts("Let's set up a provider.")
+
+        choice =
+          Owl.IO.input(label: "Provider (openai/poolside/mistral/ollama/opencode)")
+          |> String.trim()
+
+        provider = if choice == "", do: provider, else: choice
+        System.put_env("LLM_PROVIDER", provider)
+
+        unless provider in ["ollama", "opencode"] do
+          key_env = key_env_for(provider)
+
+          if System.get_env(key_env) in [nil, ""] do
+            key = Owl.IO.input(label: "API key for #{provider}") |> String.trim()
+            System.put_env(key_env, key)
+          end
+        end
+
+        :ok
+      end
+    end
+  end
+
+  defp interactive? do
+    case :io.columns() do
+      {:error, _} -> false
+      _ -> true
+    end
+  end
+
+  defp provider_has_key?(provider) do
+    case String.downcase(provider) do
+      "ollama" -> true
+      "opencode" -> true
+      "openai" -> present?(System.get_env("OPENAI_API_KEY"))
+      "poolside" -> present?(System.get_env("POOLSIDE_API_KEY"))
+      "mistral" -> present?(System.get_env("MISTRAL_API_KEY"))
+      _ -> true
+    end
+  end
+
+  defp present?(nil), do: false
+  defp present?(""), do: false
+  defp present?(_), do: true
+
+  defp key_env_for("poolside"), do: "POOLSIDE_API_KEY"
+  defp key_env_for("mistral"), do: "MISTRAL_API_KEY"
+  defp key_env_for(_), do: "OPENAI_API_KEY"
 
   defp loop(pid) do
     input = Owl.IO.input(label: "You") |> String.trim()
