@@ -29,6 +29,10 @@ defmodule Ella.Agent do
     GenServer.call(pid, {:set_provider, provider})
   end
 
+  def set_model(pid, model) when is_binary(model) do
+    GenServer.call(pid, {:set_model, model})
+  end
+
   def provider_info(pid), do: GenServer.call(pid, :provider_info)
 
   @doc """
@@ -162,6 +166,25 @@ defmodule Ella.Agent do
       {:error, reason} ->
         {:reply, {:error, Ella.Llm.Error.message(reason)}, state}
     end
+  end
+
+  @impl true
+  def handle_call({:set_model, model}, _from, state) do
+    current_provider = state.provider
+
+    # Оновлюємо збережений конфіг провайдера
+    Ella.Storage.update_provider_config(%{"model" => model})
+
+    # Оновлюємо поточний стан агента
+    config = Keyword.get(state.llm_opts, :config, [])
+    new_config = Keyword.put(config, :model, model)
+
+    new_llm_opts = Keyword.put(state.llm_opts, :config, new_config)
+    new_state = %{state | llm_opts: new_llm_opts}
+    publish_context(new_state)
+
+    Owl.IO.puts(Owl.Data.tag("Model for #{current_provider}: #{model}", :magenta))
+    {:reply, {:ok, model}, new_state}
   end
 
   @impl true

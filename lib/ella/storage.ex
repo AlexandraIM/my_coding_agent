@@ -196,6 +196,25 @@ defmodule Ella.Storage do
     end
   end
 
+  @doc """
+  Оновлює ключі конфігурації поточного провайдера (наприклад, модель).
+  Зливається з існуючим конфігом замість повного заміну.
+  """
+  def update_provider_config(updates) when is_map(updates) do
+    case load_provider() do
+      {:ok, %{provider: provider, config: config}} ->
+        new_config = Map.merge(config, updates)
+        save_provider(provider, new_config)
+
+      {:error, :not_found} ->
+        provider = System.get_env("LLM_PROVIDER") || "openai"
+        save_provider(provider, updates)
+
+      _ ->
+        :ok
+    end
+  end
+
   defp parse_mode("build"), do: :build
   defp parse_mode(_), do: :plan
 

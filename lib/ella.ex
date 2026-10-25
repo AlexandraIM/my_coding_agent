@@ -37,7 +37,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [name|list], /save [name], /load [name], /sessions, /mcp list|<executable> [args...], /exit"
+      "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [list|models <p>|model <p> <m>|<name>], /save [name], /load [name], /sessions, /mcp list|<executable> [args...], /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -180,7 +180,7 @@ defmodule Ella do
     _ -> Owl.IO.puts("Sessions are not available.")
   end
 
-  defp print_provider(pid, "") do
+  defp print_provider(pid, []) do
     info = Ella.Agent.provider_info(pid)
 
     Owl.IO.puts(Owl.Data.tag("Current provider:", :cyan))
@@ -192,7 +192,7 @@ defmodule Ella do
     _ -> Owl.IO.puts("Provider info is not available.")
   end
 
-  defp print_provider(_pid, "list") do
+  defp print_provider(_pid, ["list"]) do
     Owl.IO.puts(Owl.Data.tag("Available providers:", :cyan))
 
     Enum.each(["openai", "poolside", "mistral", "ollama", "opencode"], fn p ->
@@ -200,8 +200,36 @@ defmodule Ella do
     end)
   end
 
-  defp print_provider(pid, name) do
-    case Ella.Agent.set_provider(pid, name) do
+  defp print_provider(_pid, ["models", provider]) do
+    models = Ella.LlmClient.available_models(provider)
+
+    if models == [] do
+      Owl.IO.puts(Owl.Data.tag("No known models for '#{provider}'.", :yellow))
+    else
+      Owl.IO.puts(Owl.Data.tag("Available models for #{provider}:", :cyan))
+
+      Enum.each(models, fn m ->
+        Owl.IO.puts("  #{m["id"]} — #{m["description"]}")
+      end)
+    end
+  rescue
+    _ -> Owl.IO.puts("Models are not available.")
+  end
+
+  defp print_provider(pid, ["model", provider, model]) do
+    case Ella.Agent.set_model(pid, model) do
+      {:ok, ^model} ->
+        Owl.IO.puts(Owl.Data.tag("Model for #{provider} set to #{model}.", :green))
+
+      {:error, reason} ->
+        Owl.IO.puts(Owl.Data.tag("Failed to set model: #{inspect(reason)}", :red))
+    end
+  rescue
+    _ -> Owl.IO.puts("Model change is not available.")
+  end
+
+  defp print_provider(pid, [provider]) do
+    case Ella.Agent.set_provider(pid, provider) do
       {:ok, provider} ->
         Owl.IO.puts(Owl.Data.tag("Switched to provider '#{provider}'.", :green))
 
@@ -210,6 +238,12 @@ defmodule Ella do
     end
   rescue
     _ -> Owl.IO.puts("Provider switch is not available.")
+  end
+
+  defp print_provider(_pid, _) do
+    Owl.IO.puts(
+      "Usage: /provider | /provider list | /provider models <provider> | /provider model <provider> <model> | /provider <name>"
+    )
   end
 
   defp print_mcp_servers do
@@ -390,9 +424,14 @@ defmodule Ella do
         print_load(pid, name)
         loop(pid)
 
-      String.starts_with?(input, "/provider") ->
-        arg = input |> String.replace_prefix("/provider", "") |> String.trim()
-        print_provider(pid, arg)
+      String.starts_with?(input, "/provider ") ->
+        arg = input |> String.replace_prefix("/provider ", "") |> String.trim()
+        parts = String.split(arg, " ", trim: true)
+        print_provider(pid, parts)
+        loop(pid)
+
+      input == "/provider" ->
+        print_provider(pid, [])
         loop(pid)
 
       input == "/plan" ->

@@ -13,6 +13,44 @@ defmodule Ella.LlmClient do
   @base_delay_ms 500
   @max_delay_ms 30_000
 
+  # Доступні моделі по провайдерах (для /provider models <провайдер>).
+  # Можна розширювати через змінні середовища або конфіг проєкту.
+  @available_models %{
+    "openai" => [
+      %{"id" => "gpt-4o", "description" => "GPT-4o — флагманська модель OpenAI"},
+      %{"id" => "gpt-4o-mini", "description" => "GPT-4o Mini — швидка і ефективна"},
+      %{"id" => "gpt-4-turbo", "description" => "GPT-4 Turbo — потужне розуміння"},
+      %{"id" => "gpt-3.5-turbo", "description" => "GPT-3.5 Turbo — легасова, швидка"}
+    ],
+    "poolside" => [
+      %{"id" => "poolside-code", "description" => "Poolside Code — асистент для коду"},
+      %{"id" => "poolside-chat", "description" => "Poolside Chat — загальна розмова"}
+    ],
+    "mistral" => [
+      %{"id" => "codestral-latest", "description" => "Codestral — орієнтована на код"},
+      %{"id" => "mistral-large-latest", "description" => "Mistral Large — флагманська"},
+      %{"id" => "mistral-medium-latest", "description" => "Mistral Medium — збалансована"},
+      %{"id" => "mistral-small-latest", "description" => "Mistral Small — швидка"}
+    ],
+    "ollama" => [
+      %{"id" => "gemma4:31b-cloud", "description" => "Gemma 4 31B"},
+      %{"id" => "llama3.1:8b", "description" => "Llama 3.1 8B"},
+      %{"id" => "llama3.1:70b", "description" => "Llama 3.1 70B"},
+      %{"id" => "codellama:13b", "description" => "Code Llama 13B"}
+    ],
+    "opencode" => [
+      %{"id" => "opencode-recommended", "description" => "OpenCode рекомендована модель"}
+    ]
+  }
+
+  @doc """
+  Список доступних моделей для заданого провайдера.
+  """
+  @spec available_models(String.t()) :: [map()]
+  def available_models(provider) when is_binary(provider) do
+    Map.get(@available_models, String.downcase(provider), [])
+  end
+
   @doc """
   Виконує chat completion з повторами при тимчасових помилках.
 
@@ -231,41 +269,65 @@ defmodule Ella.LlmClient do
   Конфігурація (base_url, api_key, model) для заданого провайдера.
   """
   def config_for(provider) when is_binary(provider) do
+    selected = selected_model_for(provider)
+
     case String.downcase(provider) do
       "poolside" ->
         [
           base_url: System.get_env("POOLSIDE_BASE_URL") || "https://api.poolside.ai/v1",
           api_key: System.get_env("POOLSIDE_API_KEY"),
-          model: System.get_env("LLM_MODEL") || "poolside-code"
+          model: selected || "poolside-code"
         ]
 
       "mistral" ->
         [
           base_url: "https://api.mistral.ai/v1",
           api_key: System.get_env("MISTRAL_API_KEY"),
-          model: System.get_env("LLM_MODEL") || "codestral-latest"
+          model: selected || "codestral-latest"
         ]
 
       "opencode" ->
         [
           base_url: System.get_env("OPENCODE_BASE_URL") || "http://localhost:4096/v1",
           api_key: System.get_env("OPENCODE_API_KEY") || "free",
-          model: System.get_env("LLM_MODEL") || "opencode-recommended"
+          model: selected || "opencode-recommended"
         ]
 
       "ollama" ->
         [
           base_url: System.get_env("OLLAMA_BASE_URL") || "http://localhost:11434/v1",
           api_key: "ollama",
-          model: System.get_env("LLM_MODEL") || "gemma4:31b-cloud"
+          model: selected || "gemma4:31b-cloud"
         ]
 
       _ ->
         [
           base_url: System.get_env("OPENAI_BASE_URL") || "https://api.openai.com/v1",
           api_key: System.get_env("OPENAI_API_KEY"),
-          model: System.get_env("LLM_MODEL") || "gpt-4o"
+          model: selected || "gpt-4o"
         ]
+    end
+  end
+
+  # Обрана модель: змінна середовища LLM_MODEL має пріоритет,
+  # потім — збережена у провайдері конфігурація, потім — nil.
+  defp selected_model_for(provider) do
+    env_model = System.get_env("LLM_MODEL")
+
+    if env_model != nil and env_model != "" do
+      env_model
+    else
+      case Ella.Storage.load_provider() do
+        {:ok, %{provider: p, config: config}} ->
+          if String.downcase(p) == String.downcase(provider) do
+            Map.get(config, "model")
+          else
+            nil
+          end
+
+        _ ->
+          nil
+      end
     end
   end
 
