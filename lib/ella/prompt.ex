@@ -32,13 +32,13 @@ defmodule Ella.Prompt do
   def build(mode, project_rules, skills_catalog, project_tree \\ "")
       when mode in [:plan, :build, :review] and is_binary(project_rules) and
              is_binary(skills_catalog) and is_binary(project_tree) do
-    role(mode)
-    <> tools(mode)
-    <> workflow(mode)
-    <> output(mode)
-    <> if(project_tree == "", do: "", else: "\n" <> project_tree <> "\n")
-    <> project_rules
-    <> skills_catalog
+    role(mode) <>
+      tools(mode) <>
+      workflow(mode) <>
+      output(mode) <>
+      if(project_tree == "", do: "", else: "\n" <> project_tree <> "\n") <>
+      project_rules <>
+      skills_catalog
   end
 
   # --- 1. Роль ---

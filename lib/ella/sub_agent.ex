@@ -84,8 +84,7 @@ defmodule Ella.SubAgent do
       tools: tools,
       tool_map: Enum.into(tools, %{}, fn t -> {t.name(), t} end),
       llm_opts: Keyword.get(opts, :llm_opts, []),
-      context_opts:
-        Keyword.get(opts, :context_opts, context_opts_defaults()),
+      context_opts: Keyword.get(opts, :context_opts, context_opts_defaults()),
       usage: Usage.empty(),
       # Сабагенти отримують вужчий контекст, тому ліміт ітерацій менший
       max_iterations: Keyword.get(opts, :max_iterations, 8)
@@ -147,46 +146,46 @@ defmodule Ella.SubAgent do
         opts = streaming_opts(state.llm_opts)
 
         case LlmClient.chat_completion(compacted, state.tools, opts) do
-      {:ok, %{"tool_calls" => tool_calls} = message, usage}
-      when is_list(tool_calls) and length(tool_calls) > 0 ->
-        message = Map.put_new(message, "role", "assistant")
-        state = %{state | usage: Usage.add(state.usage, usage)}
+          {:ok, %{"tool_calls" => tool_calls} = message, usage}
+          when is_list(tool_calls) and length(tool_calls) > 0 ->
+            message = Map.put_new(message, "role", "assistant")
+            state = %{state | usage: Usage.add(state.usage, usage)}
 
-        if streamed?() do
-          IO.puts("")
+            if streamed?() do
+              IO.puts("")
+            end
+
+            updated_messages = messages ++ [message]
+
+            tool_results_messages =
+              Enum.map(tool_calls, fn call ->
+                tool_name = call["function"]["name"]
+                call_id = call["id"]
+
+                Owl.IO.puts([
+                  Owl.Data.tag("  [SubAgent Tool]: #{tool_name} ", :yellow),
+                  inspect(call["function"]["arguments"])
+                ])
+
+                result_text = execute_tool_call(call, tool_name, state.tool_map)
+                %{"role" => "tool", "tool_call_id" => call_id, "content" => result_text}
+              end)
+
+            run_loop(updated_messages ++ tool_results_messages, state, current_iter + 1)
+
+          {:ok, %{"content" => content}, usage} ->
+            state = %{state | usage: Usage.add(state.usage, usage)}
+            finish_turn(content)
+            {:ok, content || "Task completed.", state.usage}
+
+          {:ok, message, usage} ->
+            state = %{state | usage: Usage.add(state.usage, usage)}
+            finish_turn(message["content"])
+            {:ok, message["content"] || "Task completed.", state.usage}
+
+          {:error, reason} ->
+            {:error, Ella.Llm.Error.message(reason), state.usage}
         end
-
-        updated_messages = messages ++ [message]
-
-        tool_results_messages =
-          Enum.map(tool_calls, fn call ->
-            tool_name = call["function"]["name"]
-            call_id = call["id"]
-
-            Owl.IO.puts([
-              Owl.Data.tag("  [SubAgent Tool]: #{tool_name} ", :yellow),
-              inspect(call["function"]["arguments"])
-            ])
-
-            result_text = execute_tool_call(call, tool_name, state.tool_map)
-            %{"role" => "tool", "tool_call_id" => call_id, "content" => result_text}
-          end)
-
-        run_loop(updated_messages ++ tool_results_messages, state, current_iter + 1)
-
-      {:ok, %{"content" => content}, usage} ->
-        state = %{state | usage: Usage.add(state.usage, usage)}
-        finish_turn(content)
-        {:ok, content || "Task completed.", state.usage}
-
-      {:ok, message, usage} ->
-        state = %{state | usage: Usage.add(state.usage, usage)}
-        finish_turn(message["content"])
-        {:ok, message["content"] || "Task completed.", state.usage}
-
-      {:error, reason} ->
-        {:error, Ella.Llm.Error.message(reason), state.usage}
-    end
     end
   end
 

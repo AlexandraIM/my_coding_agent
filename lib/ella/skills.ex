@@ -53,9 +53,7 @@ defmodule Ella.Skills do
   """
   @spec load_all() :: [t()]
   def load_all do
-    if Application.get_env(:ella, :seed_default_skills, true) do
-      seed_defaults()
-    end
+    maybe_seed_defaults()
 
     global_dir = Path.join(global_dir(), "skills")
     project_dir = Path.join(Sandbox.root(), ".ella/skills")
@@ -66,6 +64,23 @@ defmodule Ella.Skills do
     # Порядок сохраняється: проєктні йдуть першими, глобальні доповнюють.
     (project ++ global)
     |> Enum.uniq_by(&normalise_name(&1.name))
+  end
+
+  defp maybe_seed_defaults do
+    # Opt-in via config; default false to avoid silent home-dir writes.
+    unless Application.get_env(:ella, :seed_default_skills, false), do: :ok
+
+    # Run only once per VM (migration-style).
+    unless Application.get_env(:ella, :default_skills_seeded, false) do
+      try do
+        seed_defaults()
+        Application.put_env(:ella, :default_skills_seeded, true)
+        Owl.IO.puts(Owl.Data.tag("Seeded default skills to ~/.ella/skills/", :magenta))
+      rescue
+        e ->
+          Owl.IO.puts(Owl.Data.tag("Failed to seed default skills: #{Exception.message(e)}", :yellow))
+      end
+    end
   end
 
   @doc """
@@ -130,7 +145,12 @@ defmodule Ella.Skills do
   @doc """
   Особиста директорія навичок.
   """
-  def global_dir, do: Path.join(System.user_home!(), ".ella")
+  def global_dir do
+    case Application.get_env(:ella, :global_skills_dir) do
+      nil -> Path.join(System.user_home!(), ".ella")
+      dir -> dir
+    end
+  end
 
   @doc """
   Чи є навичка з таким ім'ям.

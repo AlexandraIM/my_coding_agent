@@ -142,12 +142,14 @@ defmodule Ella.Tools.SystemExecTest do
       Application.put_env(:ella, :sandbox_root, root)
       Application.put_env(:ella, :load_project_config, true)
 
-      File.write!(Path.join(root, ".ella/config.json"),
+      File.write!(
+        Path.join(root, ".ella/config.json"),
         Jason.encode!(%{
           "protected_paths" => [],
           "disallowed_patterns" => ["curl\\s+http", "wget\\s"],
           "require_approval" => true
-        }))
+        })
+      )
 
       on_exit(fn ->
         File.rm_rf(root)

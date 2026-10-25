@@ -152,8 +152,12 @@ defmodule Ella.Tools.SystemExec do
         Regex.match?(~r/\b#{Regex.escape(denied)}\b/, command)
       end)
       |> case do
-        nil -> :ok
-        found -> {:error, "Interpreter invocation with denied command '#{found}' detected. Ask the user to run it manually."}
+        nil ->
+          :ok
+
+        found ->
+          {:error,
+           "Interpreter invocation with denied command '#{found}' detected. Ask the user to run it manually."}
       end
     else
       :ok

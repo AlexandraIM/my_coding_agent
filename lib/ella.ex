@@ -168,7 +168,9 @@ defmodule Ella do
 
   defp print_sessions do
     case Ella.Agent.list_sessions() do
-      [] -> Owl.IO.puts("No saved sessions.")
+      [] ->
+        Owl.IO.puts("No saved sessions.")
+
       names ->
         Owl.IO.puts(Owl.Data.tag("Saved sessions:", :cyan))
         Enum.each(names, fn n -> Owl.IO.puts("  #{n}") end)
@@ -244,7 +246,9 @@ defmodule Ella do
             Owl.IO.puts(Owl.Data.tag("Connection OK.", :green))
 
           {:error, reason} ->
-            Owl.IO.puts(Owl.Data.tag("Connection failed: #{Ella.Llm.Error.message(reason)}", :red))
+            Owl.IO.puts(
+              Owl.Data.tag("Connection failed: #{Ella.Llm.Error.message(reason)}", :red)
+            )
         end
 
         Ella.Storage.save_provider(provider)
@@ -290,14 +294,20 @@ defmodule Ella do
     File.mkdir_p!(skills_dir)
 
     unless File.exists?(config_path) do
-      File.write!(config_path, Jason.encode!(%{
-        "protected_paths" => ["mix.exs", "mix.lock", ".formatter.exs", ".github/"],
-        "require_approval" => true,
-        "max_attempts" => 4,
-        "request_timeout_ms" => 120000,
-        "context_budget" => 120000,
-        "max_iterations" => 30
-      }, pretty: true))
+      File.write!(
+        config_path,
+        Jason.encode!(
+          %{
+            "protected_paths" => ["mix.exs", "mix.lock", ".formatter.exs", ".github/"],
+            "require_approval" => true,
+            "max_attempts" => 4,
+            "request_timeout_ms" => 120_000,
+            "context_budget" => 120_000,
+            "max_iterations" => 30
+          },
+          pretty: true
+        )
+      )
     end
 
     unless File.exists?(agents_path) do

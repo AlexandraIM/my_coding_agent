@@ -90,6 +90,7 @@ defmodule Ella.AgentTest do
 
       skills_dir = Path.join(root, ".ella/skills")
       File.mkdir_p!(skills_dir)
+      File.mkdir_p!(Path.join(root, "global_skills"))
 
       File.write!(Path.join(skills_dir, "testing.md"), """
       ---
@@ -101,7 +102,9 @@ defmodule Ella.AgentTest do
       """)
 
       previous = Application.get_env(:ella, :sandbox_root)
+      previous_global = Application.get_env(:ella, :global_skills_dir)
       Application.put_env(:ella, :sandbox_root, root)
+      Application.put_env(:ella, :global_skills_dir, Path.join(root, "global_skills"))
 
       on_exit(fn ->
         File.rm_rf(root)
@@ -110,6 +113,12 @@ defmodule Ella.AgentTest do
           Application.delete_env(:ella, :sandbox_root)
         else
           Application.put_env(:ella, :sandbox_root, previous)
+        end
+
+        if is_nil(previous_global) do
+          Application.delete_env(:ella, :global_skills_dir)
+        else
+          Application.put_env(:ella, :global_skills_dir, previous_global)
         end
       end)
 

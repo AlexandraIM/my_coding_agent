@@ -254,7 +254,10 @@ defmodule Ella.Tools.SearchToolsTest do
 
     test "invalidate митить кеш після запису" do
       # Записуємо новий файл — WriteGuard.check має інвалідувати кеш
-      Ella.Tools.WriteFile.execute(%{"path" => "new_module.ex", "content" => "def new_module do\nend\n"})
+      Ella.Tools.WriteFile.execute(%{
+        "path" => "new_module.ex",
+        "content" => "def new_module do\nend\n"
+      })
 
       # Новий файл повинен з'явитися у пошуку після інвалідації
       assert {:ok, output} = Grep.execute(%{"pattern" => "new_module"})

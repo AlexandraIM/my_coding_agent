@@ -91,8 +91,11 @@ defmodule Ella.Tools.ApplyPatch do
     case count_occurrences(content, search) do
       0 ->
         case fuzzy_replace(content, search, replace) do
-          {:ok, updated} -> write_patch(path, updated)
-          :error -> {:error, "Could not find target 'search' string in #{path}. Verify formatting."}
+          {:ok, updated} ->
+            write_patch(path, updated)
+
+          :error ->
+            {:error, "Could not find target 'search' string in #{path}. Verify formatting."}
         end
 
       1 ->
@@ -138,12 +141,15 @@ defmodule Ella.Tools.ApplyPatch do
       new_clean = normalize_nbsp(new)
 
       case count_occurrences(acc, old_clean) do
-        1 -> {:cont, {:ok, String.replace(acc, old_clean, new_clean, global: false)}}
+        1 ->
+          {:cont, {:ok, String.replace(acc, old_clean, new_clean, global: false)}}
+
         0 ->
           case fuzzy_replace(acc, old_clean, new_clean) do
             {:ok, updated} -> {:cont, {:ok, updated}}
             :error -> {:halt, :error}
           end
+
         _ ->
           {:halt, :error}
       end
@@ -155,7 +161,9 @@ defmodule Ella.Tools.ApplyPatch do
   defp fuzzy_replace(content, search, replace) do
     # Strategy 1: Normalize whitespace (trim trailing per line, collapse blank lines)
     case strategy_whitespace(content, search, replace) do
-      {:ok, result} -> {:ok, result}
+      {:ok, result} ->
+        {:ok, result}
+
       :error ->
         # Strategy 2: Strip leading indentation per line (relative indentation)
         strategy_relative_indent(content, search, replace)

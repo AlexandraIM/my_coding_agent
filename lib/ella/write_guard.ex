@@ -22,6 +22,7 @@ defmodule Ella.WriteGuard do
   def check(path, tool_name) do
     with :ok <- approve(path, tool_name) do
       Snapshot.record_write(path)
+
       # Скидаємо кеш файлової системи, щоб пошук після запису бачив нові файли.
       FileSystem.invalidate()
       :ok

@@ -225,17 +225,26 @@ defmodule Ella.SkillsTest do
     setup do
       root = Path.join(System.tmp_dir!(), "ella_skills_#{System.unique_integer([:positive])}")
       File.mkdir_p!(Path.join(root, ".ella/skills"))
+      File.mkdir_p!(Path.join(root, "global_skills"))
 
-      previous = Application.get_env(:ella, :sandbox_root)
+      previous_sandbox = Application.get_env(:ella, :sandbox_root)
+      previous_global = Application.get_env(:ella, :global_skills_dir)
       Application.put_env(:ella, :sandbox_root, root)
+      Application.put_env(:ella, :global_skills_dir, Path.join(root, "global_skills"))
 
       on_exit(fn ->
         File.rm_rf(root)
 
-        if is_nil(previous) do
+        if is_nil(previous_sandbox) do
           Application.delete_env(:ella, :sandbox_root)
         else
-          Application.put_env(:ella, :sandbox_root, previous)
+          Application.put_env(:ella, :sandbox_root, previous_sandbox)
+        end
+
+        if is_nil(previous_global) do
+          Application.delete_env(:ella, :global_skills_dir)
+        else
+          Application.put_env(:ella, :global_skills_dir, previous_global)
         end
       end)
 

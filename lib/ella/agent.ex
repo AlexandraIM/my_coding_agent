@@ -128,6 +128,7 @@ defmodule Ella.Agent do
   def handle_call({:set_mode, new_mode}, _from, state) do
     new_state = %{state | mode: new_mode} |> update_system_prompt()
     publish_context(new_state)
+
     mode_name =
       case new_mode do
         :plan -> "PLANNING (Read-Only)"
@@ -163,6 +164,7 @@ defmodule Ella.Agent do
   @impl true
   def handle_call(:provider_info, _from, state) do
     config = Keyword.get(state.llm_opts, :config, [])
+
     info = %{
       provider: state.provider,
       adapter: state.llm_opts[:adapter],

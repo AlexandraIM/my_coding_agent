@@ -19,12 +19,13 @@ defmodule Ella.ProjectRules do
     case File.ls(root) do
       {:ok, entries} ->
         entries
-        |> Enum.reject(&String.starts_with?(&1, ".") and &1 not in [".ella"])
+        |> Enum.reject(&(String.starts_with?(&1, ".") and &1 not in [".ella"]))
         |> Enum.reject(&(&1 in @ignored_dirs))
         |> Enum.sort()
         |> Enum.flat_map(fn name ->
           path = Path.join(root, name)
           indent = String.duplicate("  ", level)
+
           if File.dir?(path) do
             [indent <> name <> "/"] ++ build_tree(path, prefix, depth, level + 1)
           else
