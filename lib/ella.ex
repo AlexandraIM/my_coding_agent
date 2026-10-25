@@ -37,7 +37,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /usage, /context, /skills, /protected, /limits, /rewind, /provider [name|list], /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
+      "Commands: /plan, /build, /review, /usage, /context, /skills, /protected, /limits, /rewind, /provider [name|list], /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -337,6 +337,10 @@ defmodule Ella do
 
       input == "/build" || input == "/execute" ->
         Ella.Agent.set_mode(pid, :build)
+        loop(pid)
+
+      input == "/review" ->
+        Ella.Agent.set_mode(pid, :review)
         loop(pid)
 
       String.starts_with?(input, "/mcp ") ->

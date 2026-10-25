@@ -28,9 +28,9 @@ defmodule Ella.Prompt do
   `mode` — `:plan` або `:build`. `project_rules` і `skills_catalog` —
   уже готовий текст, який додається після базових інструкцій.
   """
-  @spec build(:plan | :build, String.t(), String.t()) :: String.t()
+  @spec build(:plan | :build | :review, String.t(), String.t()) :: String.t()
   def build(mode, project_rules, skills_catalog)
-      when mode in [:plan, :build] and is_binary(project_rules) and is_binary(skills_catalog) do
+      when mode in [:plan, :build, :review] and is_binary(project_rules) and is_binary(skills_catalog) do
     role(mode)
     <> tools(mode)
     <> workflow(mode)
@@ -73,6 +73,24 @@ defmodule Ella.Prompt do
     4. Do not commit, push, or run destructive commands unless the user asks.
     5. Keep edits minimal: do not reformat, rename, or add comments/docstrings
        to code you were not asked to change.
+    6. Always respond to the user in the language they used (e.g., Ukrainian).
+    """
+  end
+
+  defp role(:review) do
+    """
+    You are an AI Code Reviewer working in REVIEW MODE.
+    Your goal is to inspect a change (or a set of files) and report problems,
+    risks, and missing coverage — not to make edits.
+
+    STRICT RULES FOR REVIEW MODE:
+    1. DO NOT write or modify any files. File modification tools are DISABLED.
+    2. Read the diff and the surrounding code before commenting. Locate changes
+       with `git diff` via `system_exec` and `read_file` for context.
+    3. Run the project's checks/tests via `system_exec` and report the result.
+    4. Be specific: cite file and line, explain why it is a problem, and
+       suggest a concrete fix.
+    5. Separate blocking issues from nits. Do not block on style alone.
     6. Always respond to the user in the language they used (e.g., Ukrainian).
     """
   end
@@ -135,6 +153,21 @@ defmodule Ella.Prompt do
     """
   end
 
+  defp tools(:review) do
+    """
+    ## Tools
+
+    Reading and searching, as in plan mode: `list_dir`, `grep`, `glob`,
+    `read_file`, `load_skill`.
+
+    Running checks (read-only usage only):
+    - `system_exec` — run `git diff`, `git status`, tests, linters. Do not
+      use it to modify files.
+
+    File modification tools are not available in this mode.
+    """
+  end
+
   # --- 3. Робочий процес ---
 
   defp workflow(:plan) do
@@ -171,6 +204,20 @@ defmodule Ella.Prompt do
     """
   end
 
+  defp workflow(:review) do
+    """
+    ## Working process
+
+    - Get the diff first (`git diff`, `git diff --staged`), then read the
+      touched files in full when the diff alone is not enough.
+    - Run the project's checks and report pass/fail with the actual output.
+    - Focus on correctness, edge cases, missing tests, and security; skip
+      pure style unless it affects correctness.
+    - Do not edit files or suggest edits as if they were applied — propose
+      them as suggestions.
+    """
+  end
+
   # --- 4. Формат відповіді ---
 
   defp output(:plan) do
@@ -191,6 +238,15 @@ defmodule Ella.Prompt do
     Be brief: what changed, and what you verified. Do not paste the diff back
     to the user; they have the files. If something is unfinished or uncertain,
     say so at the end instead of leaving it implicit.
+    """
+  end
+
+  defp output(:review) do
+    """
+    ## Output format
+
+    Report: blocking issues (with file:line), non-blocking suggestions, and
+    test results. End with a verdict: approve / request changes.
     """
   end
 end

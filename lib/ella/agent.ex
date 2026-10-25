@@ -21,7 +21,7 @@ defmodule Ella.Agent do
     GenServer.call(pid, {:ask, user_prompt}, :infinity)
   end
 
-  def set_mode(pid, mode) when mode in [:plan, :build] do
+  def set_mode(pid, mode) when mode in [:plan, :build, :review] do
     GenServer.call(pid, {:set_mode, mode})
   end
 
@@ -126,7 +126,12 @@ defmodule Ella.Agent do
   def handle_call({:set_mode, new_mode}, _from, state) do
     new_state = %{state | mode: new_mode} |> update_system_prompt()
     publish_context(new_state)
-    mode_name = if new_mode == :plan, do: "PLANNING (Read-Only)", else: "BUILDING (Full Access)"
+    mode_name =
+      case new_mode do
+        :plan -> "PLANNING (Read-Only)"
+        :review -> "REVIEWING (Read-Only + checks)"
+        :build -> "BUILDING (Full Access)"
+      end
 
     Owl.IO.puts(Owl.Data.tag("Switched to #{mode_name} mode.", :magenta))
     {:reply, {:ok, new_mode}, new_state}
@@ -317,6 +322,16 @@ defmodule Ella.Agent do
   # system_exec тут свідомо відсутній: через шелл можна і писати
   # (`> file`), і видаляти.
   @plan_mode_tools ~w(read_file grep glob list_dir delegate_task load_skill)
+  @review_mode_tools ~w(read_file grep glob list_dir system_exec delegate_task load_skill)
+
+  defp get_active_tools(%{mode: :review} = state) do
+    %{all_tools: tools, mcp_tools: mcp_tools} = state
+    review_local = Enum.filter(tools, fn tool -> tool.name() in @review_mode_tools end)
+    review_mcp = Enum.filter(mcp_tools, & &1.read_only)
+
+    (review_local ++ review_mcp)
+    |> apply_skill_restriction(state)
+  end
 
   defp get_active_tools(%{mode: :plan} = state) do
     %{all_tools: tools, mcp_tools: mcp_tools} = state
@@ -390,6 +405,13 @@ defmodule Ella.Agent do
     set_system_message(
       state,
       Ella.Prompt.build(:plan, state.project_rules, skills_catalog(state))
+    )
+  end
+
+  defp update_system_prompt(%{mode: :review} = state) do
+    set_system_message(
+      state,
+      Ella.Prompt.build(:review, state.project_rules, skills_catalog(state))
     )
   end
 

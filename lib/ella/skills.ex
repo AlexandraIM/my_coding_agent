@@ -53,6 +53,10 @@ defmodule Ella.Skills do
   """
   @spec load_all() :: [t()]
   def load_all do
+    if Application.get_env(:ella, :seed_default_skills, true) do
+      seed_defaults()
+    end
+
     global_dir = Path.join(global_dir(), "skills")
     project_dir = Path.join(Sandbox.root(), ".ella/skills")
 
@@ -62,6 +66,65 @@ defmodule Ella.Skills do
     # Порядок сохраняється: проєктні йдуть першими, глобальні доповнюють.
     (project ++ global)
     |> Enum.uniq_by(&normalise_name(&1.name))
+  end
+
+  @doc """
+  Записує базові навички в глобальну директорію, якщо їх там ще немає.
+  """
+  def seed_defaults do
+    dir = Path.join(global_dir(), "skills")
+    File.mkdir_p!(dir)
+
+    Enum.each(default_skills(), fn {name, content} ->
+      path = Path.join(dir, name <> ".md")
+
+      unless File.exists?(path) do
+        File.write!(path, content)
+      end
+    end)
+
+    :ok
+  end
+
+  defp default_skills do
+    [
+      {"verify",
+       """
+       ---
+       name: Verify changes
+       description: Run the project's checks after editing code
+       tools: [system_exec, read_file]
+       ---
+       After changing any file, detect and run the project's test command (mix test, pytest, cargo test, go test ./..., npm test). Report real output. A change is not done until checks pass. Never weaken an assertion to go green.
+       """},
+      {"git",
+       """
+       ---
+       name: Git hygiene
+       description: Keep changes small and reviewable; never auto-commit
+       tools: [system_exec, read_file]
+       ---
+       Before editing run git status and git diff --stat. After editing show git diff --stat and changed files. Do not commit, push, or branch unless asked.
+       """},
+      {"review",
+       """
+       ---
+       name: Code review
+       description: Structured review checklist for a change
+       tools: [read_file, grep, glob, system_exec]
+       ---
+       Review: (1) read the diff, (2) read touched files when needed, (3) run checks. Focus on correctness, edge cases, missing tests, security. Separate blocking from nits. End with approve/request changes.
+       """},
+      {"plan",
+       """
+       ---
+       name: Plan and design
+       description: Discipline for planning and architecture work
+       tools: [list_dir, grep, glob, read_file, delegate_task]
+       ---
+       Start with list_dir, then grep/glob. Name concrete files/functions in every step. Separate verified from inferred. Call out risks. Delegate isolated research. Ask approval before Build Mode.
+       """}
+    ]
   end
 
   @doc """
