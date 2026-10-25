@@ -25,6 +25,12 @@ defmodule Ella.Agent do
     GenServer.call(pid, {:set_mode, mode})
   end
 
+  def set_provider(pid, provider) when is_binary(provider) do
+    GenServer.call(pid, {:set_provider, provider})
+  end
+
+  def provider_info(pid), do: GenServer.call(pid, :provider_info)
+
   @doc """
   Реєстрація нового MCP-сервера в агента.
 
@@ -71,6 +77,8 @@ defmodule Ella.Agent do
       |> Keyword.get(:llm_opts, [])
       |> Keyword.put_new_lazy(:max_attempts, fn -> Ella.Config.max_attempts() end)
 
+    provider = Keyword.get(opts, :provider, System.get_env("LLM_PROVIDER") || "openai")
+
     project_rules = ProjectRules.load_rules()
     skills = Ella.Skills.load_all()
 
@@ -98,6 +106,7 @@ defmodule Ella.Agent do
       mcp_clients: [],
       mcp_tools: [],
       llm_opts: llm_opts,
+      provider: provider,
       project_rules: project_rules,
       skills: skills,
       active_skill: nil,
@@ -121,6 +130,29 @@ defmodule Ella.Agent do
 
     Owl.IO.puts(Owl.Data.tag("Switched to #{mode_name} mode.", :magenta))
     {:reply, {:ok, new_mode}, new_state}
+  end
+
+  @impl true
+  def handle_call({:set_provider, provider}, _from, state) do
+    llm_opts = Ella.LlmClient.provider_opts(provider)
+    new_state = %{state | provider: provider, llm_opts: llm_opts}
+    publish_context(new_state)
+
+    Owl.IO.puts(Owl.Data.tag("Switched provider to #{provider}.", :magenta))
+    {:reply, {:ok, provider}, new_state}
+  end
+
+  @impl true
+  def handle_call(:provider_info, _from, state) do
+    config = Keyword.get(state.llm_opts, :config, [])
+    info = %{
+      provider: state.provider,
+      adapter: state.llm_opts[:adapter],
+      model: Keyword.get(config, :model),
+      base_url: Keyword.get(config, :base_url)
+    }
+
+    {:reply, info, state}
   end
 
   @impl true

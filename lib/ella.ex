@@ -26,7 +26,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /usage, /context, /skills, /protected, /limits, /rewind, /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
+      "Commands: /plan, /build, /usage, /context, /skills, /protected, /limits, /rewind, /provider [name|list], /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -166,6 +166,38 @@ defmodule Ella do
     _ -> Owl.IO.puts("Sessions are not available.")
   end
 
+  defp print_provider(pid, "") do
+    info = Ella.Agent.provider_info(pid)
+
+    Owl.IO.puts(Owl.Data.tag("Current provider:", :cyan))
+    Owl.IO.puts("  provider: #{info.provider}")
+    Owl.IO.puts("  adapter:  #{inspect(info.adapter)}")
+    Owl.IO.puts("  model:    #{info.model}")
+    Owl.IO.puts("  base_url: #{info.base_url}")
+  rescue
+    _ -> Owl.IO.puts("Provider info is not available.")
+  end
+
+  defp print_provider(_pid, "list") do
+    Owl.IO.puts(Owl.Data.tag("Available providers:", :cyan))
+
+    Enum.each(["openai", "poolside", "mistral", "ollama", "opencode"], fn p ->
+      Owl.IO.puts("  #{p}")
+    end)
+  end
+
+  defp print_provider(pid, name) do
+    case Ella.Agent.set_provider(pid, name) do
+      {:ok, provider} ->
+        Owl.IO.puts(Owl.Data.tag("Switched to provider '#{provider}'.", :green))
+
+      {:error, reason} ->
+        Owl.IO.puts(Owl.Data.tag("Switch failed: #{inspect(reason)}", :red))
+    end
+  rescue
+    _ -> Owl.IO.puts("Provider switch is not available.")
+  end
+
   defp loop(pid) do
     input = Owl.IO.input(label: "You") |> String.trim()
 
@@ -211,6 +243,11 @@ defmodule Ella do
         name = input |> String.replace_prefix("/load", "") |> String.trim()
         name = if name == "", do: "default", else: name
         print_load(pid, name)
+        loop(pid)
+
+      String.starts_with?(input, "/provider") ->
+        arg = input |> String.replace_prefix("/provider", "") |> String.trim()
+        print_provider(pid, arg)
         loop(pid)
 
       input == "/plan" ->

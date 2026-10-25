@@ -214,16 +214,31 @@ defmodule Ella.LlmClient do
   end
 
   defp default_adapter do
-    case System.get_env("LLM_PROVIDER") do
+    adapter_for(System.get_env("LLM_PROVIDER") || "openai")
+  end
+
+  @doc """
+  Адаптер для заданого провайдера (без звернення до змінних середовища).
+  """
+  def adapter_for(provider) when is_binary(provider) do
+    case String.downcase(provider) do
       "poolside" -> Ella.Llm.Adapters.Poolside
       _ -> Ella.Llm.Adapters.OpenAI
     end
   end
 
-  defp default_config_for(Ella.Llm.Adapters.OpenAI) do
-    provider = System.get_env("LLM_PROVIDER") || "openai"
+  @doc """
+  Конфігурація (base_url, api_key, model) для заданого провайдера.
+  """
+  def config_for(provider) when is_binary(provider) do
+    case String.downcase(provider) do
+      "poolside" ->
+        [
+          base_url: System.get_env("POOLSIDE_BASE_URL") || "https://api.poolside.ai/v1",
+          api_key: System.get_env("POOLSIDE_API_KEY"),
+          model: System.get_env("LLM_MODEL") || "poolside-code"
+        ]
 
-    case provider do
       "mistral" ->
         [
           base_url: "https://api.mistral.ai/v1",
@@ -252,6 +267,21 @@ defmodule Ella.LlmClient do
           model: System.get_env("LLM_MODEL") || "gpt-4o"
         ]
     end
+  end
+
+  @doc """
+  Готові llm_opts для заданого провайдера.
+  """
+  def provider_opts(provider) when is_binary(provider) do
+    [
+      adapter: adapter_for(provider),
+      config: config_for(provider),
+      max_attempts: Ella.Config.max_attempts()
+    ]
+  end
+
+  defp default_config_for(Ella.Llm.Adapters.OpenAI) do
+    config_for(System.get_env("LLM_PROVIDER") || "openai")
   end
 
   defp default_config_for(Ella.Llm.Adapters.Poolside) do
