@@ -40,16 +40,23 @@ defmodule Ella.Tools.DelegateTask do
     end
   end
 
-  defp usage_summary(%Ella.Llm.Usage{} = u) when u.prompt_tokens or u.completion_tokens do
-    cost = if u.cost, do: " $#{:erlang.float_to_binary(u.cost, decimals: 4)}", else: ""
-    total = (u.prompt_tokens || 0) + (u.completion_tokens || 0)
-    "\n  [usage: #{u.prompt_tokens || 0} in / #{u.completion_tokens || 0} out = #{total} tokens#{cost}]"
-  end
-  defp usage_summary(_), do: ""
-
   def execute(args) do
     {:error, "Invalid arguments passed to delegate_task: #{inspect(args)}"}
   end
+
+  defp usage_summary(%Ella.Llm.Usage{} = u) do
+    prompt = u.prompt_tokens || 0
+    completion = u.completion_tokens || 0
+    total = prompt + completion
+    cost = if u.cost, do: " $#{:erlang.float_to_binary(u.cost, decimals: 4)}", else: ""
+    if total > 0 do
+      "\n  [usage: #{prompt} in / #{completion} out = #{total} tokens#{cost}]"
+    else
+      ""
+    end
+  end
+
+  defp usage_summary(_), do: ""
 
   defp accumulate_usage(usage) do
     current = Process.get(:ella_subagent_usage, Ella.Llm.Usage.empty())
