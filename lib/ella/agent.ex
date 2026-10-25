@@ -257,6 +257,8 @@ defmodule Ella.Agent do
     new_messages = state.messages ++ [%{"role" => "user", "content" => user_prompt}]
     active_tools = get_active_tools(state)
 
+    Process.delete(:ella_subagent_usage)
+
     case run_loop(new_messages, active_tools, state, 0) do
       {:ok, final_messages, response_text, usage} ->
         {:reply, {:ok, response_text}, %{state | messages: final_messages, usage: usage}}
@@ -536,6 +538,14 @@ defmodule Ella.Agent do
 
             %{"role" => "tool", "tool_call_id" => call_id, "content" => result_text}
           end)
+
+        state =
+          case Process.get(:ella_subagent_usage) do
+            nil -> state
+            usage -> %{state | usage: Ella.Llm.Usage.add(state.usage, usage)}
+          end
+
+        Process.delete(:ella_subagent_usage)
 
         run_loop(
           updated_messages ++ tool_results_messages,

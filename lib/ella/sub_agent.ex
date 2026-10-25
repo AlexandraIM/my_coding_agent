@@ -5,6 +5,7 @@ defmodule Ella.SubAgent do
   use GenServer
 
   alias Ella.Context
+  alias Ella.Llm.Usage
   alias Ella.LlmClient
   alias Ella.Tool
 
@@ -79,6 +80,7 @@ defmodule Ella.SubAgent do
       llm_opts: Keyword.get(opts, :llm_opts, []),
       context_opts:
         Keyword.get(opts, :context_opts, context_opts_defaults()),
+      usage: Usage.empty(),
       # Сабагенти отримують вужчий контекст, тому ліміт ітерацій менший
       max_iterations: Keyword.get(opts, :max_iterations, 8)
     }
@@ -91,9 +93,16 @@ defmodule Ella.SubAgent do
     Owl.IO.puts(Owl.Data.tag("[SubAgent] Executing sub-task...", :magenta))
 
     case run_loop(state.messages, state, 0) do
+      {:ok, summary, usage} ->
+        Owl.IO.puts(Owl.Data.tag("[SubAgent] Finished sub-task.", :green))
+        {:stop, :normal, {:ok, summary, usage}, state}
+
+      {:error, reason, usage} ->
+        {:stop, :normal, {:error, reason, usage}, state}
+
       {:ok, summary} ->
         Owl.IO.puts(Owl.Data.tag("[SubAgent] Finished sub-task.", :green))
-        {:stop, :normal, {:ok, summary}, state}
+        {:stop, :normal, {:ok, summary, Usage.empty()}, state}
 
       {:error, reason} ->
         {:stop, :normal, {:error, reason}, state}
@@ -113,7 +122,8 @@ defmodule Ella.SubAgent do
 
   defp run_loop(_messages, state, current_iter) when current_iter >= state.max_iterations do
     {:ok,
-     "Sub-agent reached the iteration limit (#{state.max_iterations}). Work summary attached."}
+     "Sub-agent reached the iteration limit (#{state.max_iterations}). Work summary attached.",
+     state.usage}
   end
 
   defp run_loop(messages, state, current_iter) do
@@ -124,15 +134,17 @@ defmodule Ella.SubAgent do
         {:error,
          "Conversation exceeds the context budget even after compaction " <>
            "(#{Context.estimate(messages)} tokens, budget " <>
-           "#{Context.budget(state.context_opts)}). " <> "Start a new sub-task to continue."}
+           "#{Context.budget(state.context_opts)}). " <> "Start a new sub-task to continue.",
+         state.usage}
 
       {:ok, compacted} ->
         opts = streaming_opts(state.llm_opts)
 
         case LlmClient.chat_completion(compacted, state.tools, opts) do
-      {:ok, %{"tool_calls" => tool_calls} = message, _usage}
+      {:ok, %{"tool_calls" => tool_calls} = message, usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
         message = Map.put_new(message, "role", "assistant")
+        state = %{state | usage: Usage.add(state.usage, usage)}
 
         if streamed?() do
           IO.puts("")
@@ -156,16 +168,18 @@ defmodule Ella.SubAgent do
 
         run_loop(updated_messages ++ tool_results_messages, state, current_iter + 1)
 
-      {:ok, %{"content" => content}, _usage} ->
+      {:ok, %{"content" => content}, usage} ->
+        state = %{state | usage: Usage.add(state.usage, usage)}
         finish_turn(content)
-        {:ok, content || "Task completed."}
+        {:ok, content || "Task completed.", state.usage}
 
-      {:ok, message, _usage} ->
+      {:ok, message, usage} ->
+        state = %{state | usage: Usage.add(state.usage, usage)}
         finish_turn(message["content"])
-        {:ok, message["content"] || "Task completed."}
+        {:ok, message["content"] || "Task completed.", state.usage}
 
       {:error, reason} ->
-        {:error, Ella.Llm.Error.message(reason)}
+        {:error, Ella.Llm.Error.message(reason), state.usage}
     end
     end
   end

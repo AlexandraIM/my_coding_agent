@@ -19,8 +19,16 @@ defmodule Ella.Tools.DelegateTask do
 
   def execute(%{"task" => task}) do
     case Ella.SubAgent.run_task(task, tools_for_mode(), llm_opts()) do
+      {:ok, summary, usage} ->
+        accumulate_usage(usage)
+        {:ok, "Sub-agent result:\n#{summary}"}
+
       {:ok, summary} ->
         {:ok, "Sub-agent result:\n#{summary}"}
+
+      {:error, reason, usage} ->
+        accumulate_usage(usage)
+        {:error, "Sub-agent failed: #{inspect(reason)}"}
 
       {:error, reason} ->
         {:error, "Sub-agent failed: #{inspect(reason)}"}
@@ -29,6 +37,11 @@ defmodule Ella.Tools.DelegateTask do
 
   def execute(args) do
     {:error, "Invalid arguments passed to delegate_task: #{inspect(args)}"}
+  end
+
+  defp accumulate_usage(usage) do
+    current = Process.get(:ella_subagent_usage, Ella.Llm.Usage.empty())
+    Process.put(:ella_subagent_usage, Ella.Llm.Usage.add(current, usage))
   end
 
   # Сабагент успадковує режим головного агента. Агент записує його в
