@@ -80,7 +80,9 @@ defmodule Ella.Agent do
     provider = Keyword.get(opts, :provider, System.get_env("LLM_PROVIDER") || "openai")
 
     project_rules = ProjectRules.load_rules()
-    project_tree = ProjectRules.project_tree()
+    root = Ella.Sandbox.root()
+    project_tree_depth = Keyword.get_lazy(opts, :project_tree_depth, fn -> 2 end)
+    project_tree = ProjectRules.project_tree(root, project_tree_depth)
     skills = Ella.Skills.load_all()
 
     if skills != [] do
