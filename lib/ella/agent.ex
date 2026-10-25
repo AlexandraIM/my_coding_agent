@@ -80,6 +80,7 @@ defmodule Ella.Agent do
     provider = Keyword.get(opts, :provider, System.get_env("LLM_PROVIDER") || "openai")
 
     project_rules = ProjectRules.load_rules()
+    project_tree = ProjectRules.project_tree()
     skills = Ella.Skills.load_all()
 
     if skills != [] do
@@ -108,6 +109,7 @@ defmodule Ella.Agent do
       llm_opts: llm_opts,
       provider: provider,
       project_rules: project_rules,
+      project_tree: project_tree,
       skills: skills,
       active_skill: nil,
       context_opts: context_opts,
@@ -404,21 +406,21 @@ defmodule Ella.Agent do
   defp update_system_prompt(%{mode: :plan} = state) do
     set_system_message(
       state,
-      Ella.Prompt.build(:plan, state.project_rules, skills_catalog(state))
+      Ella.Prompt.build(:plan, state.project_rules, skills_catalog(state), state.project_tree)
     )
   end
 
   defp update_system_prompt(%{mode: :review} = state) do
     set_system_message(
       state,
-      Ella.Prompt.build(:review, state.project_rules, skills_catalog(state))
+      Ella.Prompt.build(:review, state.project_rules, skills_catalog(state), state.project_tree)
     )
   end
 
   defp update_system_prompt(%{mode: :build} = state) do
     set_system_message(
       state,
-      Ella.Prompt.build(:build, state.project_rules, skills_catalog(state))
+      Ella.Prompt.build(:build, state.project_rules, skills_catalog(state), state.project_tree)
     )
   end
 
