@@ -4,6 +4,7 @@ defmodule Ella.SubAgent do
   """
   use GenServer
 
+  alias Ella.Context
   alias Ella.LlmClient
   alias Ella.Tool
 
@@ -76,6 +77,8 @@ defmodule Ella.SubAgent do
       tools: tools,
       tool_map: Enum.into(tools, %{}, fn t -> {t.name(), t} end),
       llm_opts: Keyword.get(opts, :llm_opts, []),
+      context_opts:
+        Keyword.get(opts, :context_opts, context_opts_defaults()),
       # Сабагенти отримують вужчий контекст, тому ліміт ітерацій менший
       max_iterations: Keyword.get(opts, :max_iterations, 8)
     }
@@ -97,6 +100,15 @@ defmodule Ella.SubAgent do
     end
   end
 
+  defp context_opts_defaults do
+    [
+      context_budget: 32_000,
+      keep_recent: 8,
+      max_tool_result_chars: 1_500,
+      summary_max_entries: 20
+    ]
+  end
+
   # --- Agentic Loop ---
 
   defp run_loop(_messages, state, current_iter) when current_iter >= state.max_iterations do
@@ -106,9 +118,18 @@ defmodule Ella.SubAgent do
 
   defp run_loop(messages, state, current_iter) do
     Process.put(:ella_streaming, false)
-    opts = streaming_opts(state.llm_opts)
 
-    case LlmClient.chat_completion(messages, state.tools, opts) do
+    case Context.compact(messages, state.context_opts) do
+      {:error, :too_large} ->
+        {:error,
+         "Conversation exceeds the context budget even after compaction " <>
+           "(#{Context.estimate(messages)} tokens, budget " <>
+           "#{Context.budget(state.context_opts)}). " <> "Start a new sub-task to continue."}
+
+      {:ok, compacted} ->
+        opts = streaming_opts(state.llm_opts)
+
+        case LlmClient.chat_completion(compacted, state.tools, opts) do
       {:ok, %{"tool_calls" => tool_calls} = message, _usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
         message = Map.put_new(message, "role", "assistant")
@@ -145,6 +166,7 @@ defmodule Ella.SubAgent do
 
       {:error, reason} ->
         {:error, Ella.Llm.Error.message(reason)}
+    end
     end
   end
 
