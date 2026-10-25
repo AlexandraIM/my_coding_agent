@@ -54,7 +54,9 @@ defmodule Ella.Prompt do
     3. Use `read_file` with `offset`/`limit` for large files instead of reading them whole.
     4. Output your plan in clean Markdown with numbered steps.
     5. Ask the user if they agree with the plan before proceeding to Build Mode.
-    6. Always respond to the user in the language they used (e.g., Ukrainian).
+    6. Do not run commands or tool calls that mutate state, even indirectly
+       (redirection, `rm`, `git checkout`, ...). Read-only tools only.
+    7. Always respond to the user in the language they used (e.g., Ukrainian).
     """
   end
 
@@ -68,7 +70,10 @@ defmodule Ella.Prompt do
        guessing paths, and use `read_file` with offset/limit for large files.
     2. Prefer precise edits using `apply_patch` instead of overwriting files.
     3. Run checks/tests via `system_exec` after edits.
-    4. Always respond to the user in the language they used (e.g., Ukrainian).
+    4. Do not commit, push, or run destructive commands unless the user asks.
+    5. Keep edits minimal: do not reformat, rename, or add comments/docstrings
+       to code you were not asked to change.
+    6. Always respond to the user in the language they used (e.g., Ukrainian).
     """
   end
 
@@ -95,6 +100,9 @@ defmodule Ella.Prompt do
       otherwise you cannot check what comes back.
 
     File modification tools are not available in this mode.
+
+    Read-only tool calls that do not depend on each other (e.g. several
+    `read_file`/`grep`) may be issued in the same turn to save round-trips.
     """
   end
 
@@ -120,6 +128,10 @@ defmodule Ella.Prompt do
     Safety net: every file you touch is backed up automatically, so any
     mistake can be undone with `/rewind` — you do not need to ask the user
     for permission before an ordinary edit.
+
+    Issue independent tool calls in the same turn when possible (e.g.
+    reading several files). When a tool returns an error, read it and adjust
+    the call instead of repeating it unchanged.
     """
   end
 
