@@ -286,14 +286,12 @@ defmodule Ella do
   defp print_init do
     root = File.cwd!()
     ella_dir = Path.join(root, ".ella")
-    skills_dir = Path.join(ella_dir, "skills")
     config_path = Path.join(ella_dir, "config.json")
     agents_path = Path.join(root, "AGENTS.md")
 
-    File.mkdir_p!(ella_dir)
-    File.mkdir_p!(skills_dir)
-
     unless File.exists?(config_path) do
+      File.mkdir_p!(ella_dir)
+
       File.write!(
         config_path,
         Jason.encode!(

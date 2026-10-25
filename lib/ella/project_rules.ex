@@ -48,7 +48,6 @@ defmodule Ella.ProjectRules do
 
       file_path ->
         filename = Path.basename(file_path)
-        Owl.IO.puts(Owl.Data.tag("Loaded project rules from #{filename}", :magenta))
 
         case File.read(file_path) do
           {:ok, content} ->
