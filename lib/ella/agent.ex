@@ -138,6 +138,10 @@ defmodule Ella.Agent do
     new_state = %{state | provider: provider, llm_opts: llm_opts}
     publish_context(new_state)
 
+    config = Keyword.get(llm_opts, :config, [])
+    config_map = Map.new(config, fn {k, v} -> {to_string(k), v} end)
+    Ella.Storage.save_provider(provider, config_map)
+
     Owl.IO.puts(Owl.Data.tag("Switched provider to #{provider}.", :magenta))
     {:reply, {:ok, provider}, new_state}
   end

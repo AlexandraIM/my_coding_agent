@@ -154,6 +154,48 @@ defmodule Ella.Storage do
     end
   end
 
+  # --- Provider persistence ---
+
+  def provider_path(dir \\ base_dir()) do
+    Path.join(dir, "provider.json")
+  end
+
+  def save_provider(provider, config \\ %{}, dir \\ base_dir()) do
+    ensure_storage_created!()
+
+    payload = %{
+      "provider" => to_string(provider),
+      "config" => config || %{}
+    }
+
+    path = provider_path(dir)
+    File.write!(path, Jason.encode!(payload, pretty: true))
+    {:ok, path}
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  def load_provider(dir \\ base_dir()) do
+    path = provider_path(dir)
+
+    case File.read(path) do
+      {:ok, content} ->
+        case Jason.decode(content) do
+          {:ok, %{"provider" => provider} = payload} when is_binary(provider) ->
+            {:ok, %{provider: provider, config: Map.get(payload, "config", %{})}}
+
+          _ ->
+            {:error, :invalid_provider}
+        end
+
+      {:error, :enoent} ->
+        {:error, :not_found}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   defp parse_mode("build"), do: :build
   defp parse_mode(_), do: :plan
 

@@ -23,7 +23,16 @@ defmodule Ella do
     # застосунки, яким це потрібно, піднімаємо самі.
     {:ok, _} = Application.ensure_all_started(:ssl)
 
+    case Ella.Storage.load_provider() do
+      {:ok, %{provider: provider}} -> System.put_env("LLM_PROVIDER", provider)
+      _ -> :ok
+    end
+
     maybe_setup_provider()
+
+    unless File.exists?(Ella.Storage.provider_path()) do
+      Ella.Storage.save_provider(System.get_env("LLM_PROVIDER") || "openai")
+    end
 
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
@@ -219,6 +228,7 @@ defmodule Ella do
 
         provider = if choice == "", do: provider, else: choice
         System.put_env("LLM_PROVIDER", provider)
+        Ella.Storage.save_provider(provider)
 
         unless provider in ["ollama", "opencode"] do
           key_env = key_env_for(provider)
