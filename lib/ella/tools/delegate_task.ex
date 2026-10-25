@@ -18,22 +18,34 @@ defmodule Ella.Tools.DelegateTask do
   end
 
   def execute(%{"task" => task}) do
+    task_preview = String.slice(task, 0, 120) <> if String.length(task) > 120, do: "...", else: ""
+    Owl.IO.puts(Owl.Data.tag("▶ Delegating sub-task: #{task_preview}", :magenta))
+
     case Ella.SubAgent.run_task(task, tools_for_mode(), llm_opts()) do
       {:ok, summary, usage} ->
         accumulate_usage(usage)
-        {:ok, "Sub-agent result:\n#{summary}"}
+        usage_str = usage_summary(usage)
+        {:ok, "Sub-agent result:#{usage_str}\n#{summary}"}
 
       {:ok, summary} ->
         {:ok, "Sub-agent result:\n#{summary}"}
 
       {:error, reason, usage} ->
         accumulate_usage(usage)
-        {:error, "Sub-agent failed: #{inspect(reason)}"}
+        usage_str = usage_summary(usage)
+        {:error, "Sub-agent failed:#{usage_str} #{inspect(reason)}"}
 
       {:error, reason} ->
         {:error, "Sub-agent failed: #{inspect(reason)}"}
     end
   end
+
+  defp usage_summary(%Ella.Llm.Usage{} = u) when u.prompt_tokens or u.completion_tokens do
+    cost = if u.cost, do: " $#{:erlang.float_to_binary(u.cost, decimals: 4)}", else: ""
+    total = (u.prompt_tokens || 0) + (u.completion_tokens || 0)
+    "\n  [usage: #{u.prompt_tokens || 0} in / #{u.completion_tokens || 0} out = #{total} tokens#{cost}]"
+  end
+  defp usage_summary(_), do: ""
 
   def execute(args) do
     {:error, "Invalid arguments passed to delegate_task: #{inspect(args)}"}

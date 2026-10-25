@@ -95,21 +95,23 @@ defmodule Ella.SubAgent do
 
   @impl true
   def handle_call(:execute, _from, state) do
-    Owl.IO.puts(Owl.Data.tag("[SubAgent] Executing sub-task...", :magenta))
+    Owl.IO.puts(Owl.Data.tag("┌─ SubAgent ──────────────────────────────────────────────", :magenta))
 
     case run_loop(state.messages, state, 0) do
       {:ok, summary, usage} ->
-        Owl.IO.puts(Owl.Data.tag("[SubAgent] Finished sub-task.", :green))
+        Owl.IO.puts(Owl.Data.tag("└─ SubAgent finished ──────────────────────────────────────", :green))
         {:stop, :normal, {:ok, summary, usage}, state}
 
       {:error, reason, usage} ->
+        Owl.IO.puts(Owl.Data.tag("└─ SubAgent failed ────────────────────────────────────────", :red))
         {:stop, :normal, {:error, reason, usage}, state}
 
       {:ok, summary} ->
-        Owl.IO.puts(Owl.Data.tag("[SubAgent] Finished sub-task.", :green))
+        Owl.IO.puts(Owl.Data.tag("└─ SubAgent finished ──────────────────────────────────────", :green))
         {:stop, :normal, {:ok, summary, Usage.empty()}, state}
 
       {:error, reason} ->
+        Owl.IO.puts(Owl.Data.tag("└─ SubAgent failed ────────────────────────────────────────", :red))
         {:stop, :normal, {:error, reason}, state}
     end
   end
