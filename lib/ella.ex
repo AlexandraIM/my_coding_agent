@@ -26,7 +26,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /usage, /context, /skills, /protected, /limits, /rewind, /mcp <executable> <args>, /exit"
+      "Commands: /plan, /build, /usage, /context, /skills, /protected, /limits, /rewind, /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -128,6 +128,44 @@ defmodule Ella do
     end
   end
 
+  defp print_save(pid, name) do
+    case Ella.Agent.save_session(pid, name) do
+      {:ok, path} ->
+        Owl.IO.puts(Owl.Data.tag("Saved session '#{name}' to #{path}", :green))
+
+      {:error, reason} ->
+        Owl.IO.puts(Owl.Data.tag("Save failed: #{inspect(reason)}", :red))
+    end
+  rescue
+    _ -> Owl.IO.puts("Save is not available.")
+  end
+
+  defp print_load(pid, name) do
+    case Ella.Agent.load_session(pid, name) do
+      {:ok, _} ->
+        Owl.IO.puts(Owl.Data.tag("Loaded session '#{name}'.", :green))
+
+      {:error, :not_found} ->
+        Owl.IO.puts(Owl.Data.tag("Session '#{name}' not found.", :red))
+
+      {:error, reason} ->
+        Owl.IO.puts(Owl.Data.tag("Load failed: #{inspect(reason)}", :red))
+    end
+  rescue
+    _ -> Owl.IO.puts("Load is not available.")
+  end
+
+  defp print_sessions do
+    case Ella.Agent.list_sessions() do
+      [] -> Owl.IO.puts("No saved sessions.")
+      names ->
+        Owl.IO.puts(Owl.Data.tag("Saved sessions:", :cyan))
+        Enum.each(names, fn n -> Owl.IO.puts("  #{n}") end)
+    end
+  rescue
+    _ -> Owl.IO.puts("Sessions are not available.")
+  end
+
   defp loop(pid) do
     input = Owl.IO.input(label: "You") |> String.trim()
 
@@ -157,6 +195,22 @@ defmodule Ella do
 
       input == "/rewind" ->
         print_rewind()
+        loop(pid)
+
+      input == "/sessions" ->
+        print_sessions()
+        loop(pid)
+
+      String.starts_with?(input, "/save") ->
+        name = input |> String.replace_prefix("/save", "") |> String.trim()
+        name = if name == "", do: "default", else: name
+        print_save(pid, name)
+        loop(pid)
+
+      String.starts_with?(input, "/load") ->
+        name = input |> String.replace_prefix("/load", "") |> String.trim()
+        name = if name == "", do: "default", else: name
+        print_load(pid, name)
         loop(pid)
 
       input == "/plan" ->

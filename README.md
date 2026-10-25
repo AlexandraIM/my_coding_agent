@@ -293,6 +293,9 @@ The model defaults to `gpt-4o` (OpenAI), `poolside-code` (Poolside), `codestral-
 | `/protected` | Show protected paths and whether approval is required |
 | `/limits` | Show the active session limits (attempts, timeout, budget, iterations) |
 | `/rewind` | Undo everything the agent changed this session |
+| `/save [name]` | Save the current conversation (history, mode, usage) under a name |
+| `/load [name]` | Restore a previously saved conversation |
+| `/sessions` | List saved conversations |
 | `/mcp [executable args]` | Register an MCP server (or show help if called without args) |
 | `/exit` | Terminate the session |
 

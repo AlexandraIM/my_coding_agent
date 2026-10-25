@@ -196,6 +196,39 @@ defmodule Ella.Agent do
   end
 
   @impl true
+  def handle_call({:save_session, name}, _from, state) do
+    data = %{
+      mode: state.mode,
+      messages: state.messages,
+      usage: state.usage
+    }
+
+    case Ella.Storage.save_session(name, data) do
+      {:ok, path} -> {:reply, {:ok, path}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:load_session, name}, _from, state) do
+    case Ella.Storage.load_session(name) do
+      {:ok, loaded} ->
+        new_state =
+          state
+          |> Map.put(:mode, loaded.mode)
+          |> Map.put(:messages, loaded.messages)
+          |> Map.put(:usage, loaded.usage)
+          |> update_system_prompt()
+          |> tap(&publish_context/1)
+
+        {:reply, {:ok, name}, new_state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
   def handle_call(:active_skill, _from, state) do
     {:reply, state.active_skill && state.active_skill.name, state}
   end
@@ -344,6 +377,19 @@ defmodule Ella.Agent do
   Список доступних навичок (назва та опис).
   """
   def skills(pid), do: GenServer.call(pid, :skills)
+
+  @doc "Зберігає поточну сесію під заданим ім'ям."
+  def save_session(pid, name \\ "default") do
+    GenServer.call(pid, {:save_session, name})
+  end
+
+  @doc "Завантажує сесію за ім'ям, відновлюючи історію та режим."
+  def load_session(pid, name \\ "default") do
+    GenServer.call(pid, {:load_session, name})
+  end
+
+  @doc "Список збережених сесій."
+  def list_sessions, do: Ella.Storage.list_sessions()
 
   @doc """
   Назва навички, що обмежує інструменти в поточному кроці, або nil.
