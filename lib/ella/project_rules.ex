@@ -6,7 +6,7 @@ defmodule Ella.ProjectRules do
   # Список файлів у порядку пріоритету
   @rule_files ["AGENTS.md", "AGENT.md", ".cursorrules", ".agentrules", "CLAUDE.md"]
 
-  @ignored_dirs [".git", "_build", "deps", "node_modules", ".elixir_ls", ".poolside"]
+  @ignored_dirs ["_build", "deps", "node_modules"]
 
   def project_tree(root_dir \\ File.cwd!(), depth \\ 2) do
     lines = build_tree(root_dir, "", depth, 0)
