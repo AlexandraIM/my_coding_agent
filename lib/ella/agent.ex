@@ -632,7 +632,7 @@ defmodule Ella.Agent do
 
         updated_messages = original_messages ++ [message]
 
-        {tool_results_messages, state} =
+        {tool_results_messages_rev, state} =
           Enum.reduce(tool_calls, {[], state}, fn call, {results, acc_state} ->
             tool_name = call["function"]["name"]
             call_id = call["id"]
@@ -645,9 +645,11 @@ defmodule Ella.Agent do
             {result_text, new_state} =
               execute_tool_call(call, tool_name, tool_map, acc_state)
 
-            {results ++ [%{"role" => "tool", "tool_call_id" => call_id, "content" => result_text}],
+            {[%{"role" => "tool", "tool_call_id" => call_id, "content" => result_text} | results],
              new_state}
           end)
+
+        tool_results_messages = Enum.reverse(tool_results_messages_rev)
 
         state =
           case Process.get(:ella_subagent_usage) do
