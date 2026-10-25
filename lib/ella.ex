@@ -28,7 +28,7 @@ defmodule Ella do
       _ -> :ok
     end
 
-    maybe_setup_provider()
+    print_setup()
 
     unless File.exists?(Ella.Storage.provider_path()) do
       Ella.Storage.save_provider(System.get_env("LLM_PROVIDER") || "openai")
@@ -37,10 +37,11 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /review, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [name|list], /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
+      "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [name|list], /save [name], /load [name], /sessions, /mcp <executable> <args>, /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
+    print_setup()
     loop(pid)
   end
 
@@ -211,7 +212,7 @@ defmodule Ella do
     _ -> Owl.IO.puts("Provider switch is not available.")
   end
 
-  defp maybe_setup_provider do
+  defp print_setup do
     # У неінтерактивному середовищі (CI, pipe) не блокуємо запуск.
     unless interactive?() do
       :ok
@@ -389,6 +390,10 @@ defmodule Ella do
 
       input == "/init" ->
         print_init()
+        loop(pid)
+
+      input == "/setup" ->
+        print_setup()
         loop(pid)
 
       String.starts_with?(input, "/mcp ") ->
