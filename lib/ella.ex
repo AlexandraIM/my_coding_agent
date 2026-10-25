@@ -40,9 +40,11 @@ defmodule Ella do
       "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [list|models <p>|test <p>|model <p> <m>|<name>], /save [name], /load [name], /sessions, /mcp list|<executable> [args...], /exit"
     )
 
+    Owl.IO.puts(Owl.Data.tag("Type /help for the full command list.", :white))
+
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
     print_setup()
-    loop(pid)
+    loop(pid, :plan)
   end
 
   defp print_usage(pid) do
@@ -265,6 +267,44 @@ defmodule Ella do
     )
   end
 
+  defp print_help do
+    Owl.IO.puts(Owl.Data.tag("Available commands:", :cyan))
+
+    commands = [
+      {"/plan", "Switch to Plan mode (read-only)"},
+      {"/build", "Switch to Build mode (full access)"},
+      {"/review", "Switch to Review mode (read-only + checks)"},
+      {"/provider", "Show current provider"},
+      {"/provider list", "List available providers"},
+      {"/provider models <p>", "List models for provider"},
+      {"/provider test <p>", "Test provider connection"},
+      {"/provider model <p> <m>", "Select model for provider"},
+      {"/provider <name>", "Switch provider"},
+      {"/setup", "Configure provider and API key"},
+      {"/init", "Initialize .ella/ and AGENTS.md"},
+      {"/mcp list", "List registered MCP servers"},
+      {"/mcp <cmd> [args]", "Register an MCP server"},
+      {"/skills", "List project skills"},
+      {"/usage", "Show token usage this session"},
+      {"/context", "Show context budget and usage"},
+      {"/protected", "Show protected file paths"},
+      {"/limits", "Show session limits"},
+      {"/rewind", "Undo agent file changes"},
+      {"/sessions", "List saved sessions"},
+      {"/save [name]", "Save current session"},
+      {"/load [name]", "Load a saved session"},
+      {"/help", "Show this help message"},
+      {"/exit", "Quit Ella"}
+    ]
+
+    Enum.each(commands, fn {cmd, desc} ->
+      Owl.IO.puts([
+        String.pad_leading(cmd, 24),
+        "  #{desc}"
+      ])
+    end)
+  end
+
   defp print_mcp_servers do
     servers = Ella.Storage.load_mcp_config()
 
@@ -396,82 +436,110 @@ defmodule Ella do
     e -> Owl.IO.puts(Owl.Data.tag("Init failed: #{Exception.message(e)}", :red))
   end
 
-  defp loop(pid) do
-    input = Owl.IO.input(label: "You") |> String.trim()
+  defp loop(pid, mode) do
+    mode_label =
+      case mode do
+        :plan -> "PLAN"
+        :build -> "BUILD"
+        :review -> "REVIEW"
+      end
+
+    mode_color =
+      case mode do
+        :plan -> :cyan
+        :build -> :green
+        :review -> :yellow
+      end
+
+    IO.puts("")
+    Owl.IO.puts(Owl.Data.tag("─" <> String.duplicate("─", 58), :text_muted))
+
+    Owl.IO.puts([
+      Owl.Data.tag("You [", mode_color),
+      Owl.Data.tag(mode_label, mode_color),
+      Owl.Data.tag("] ", mode_color)
+    ])
+
+    input = Owl.IO.input(label: "") |> String.trim()
 
     cond do
       input == "/exit" ->
-        Owl.IO.puts("Бувай, повертайся!")
+        IO.puts("")
+        Owl.IO.puts(Owl.Data.tag("Бувай, повертайся!", :magenta))
+
+      input == "/help" ->
+        print_help()
+        loop(pid, mode)
 
       input == "/usage" ->
         print_usage(pid)
-        loop(pid)
+        loop(pid, mode)
 
       input == "/context" ->
         print_context(pid)
-        loop(pid)
+        loop(pid, mode)
 
       input == "/skills" ->
         print_skills(pid)
-        loop(pid)
+        loop(pid, mode)
 
       input == "/protected" ->
         print_protected()
-        loop(pid)
+        loop(pid, mode)
 
       input == "/limits" ->
         print_limits()
-        loop(pid)
+        loop(pid, mode)
 
       input == "/rewind" ->
         print_rewind()
-        loop(pid)
+        loop(pid, mode)
 
       input == "/sessions" ->
         print_sessions()
-        loop(pid)
+        loop(pid, mode)
 
       String.starts_with?(input, "/save") ->
         name = input |> String.replace_prefix("/save", "") |> String.trim()
         name = if name == "", do: "default", else: name
         print_save(pid, name)
-        loop(pid)
+        loop(pid, mode)
 
       String.starts_with?(input, "/load") ->
         name = input |> String.replace_prefix("/load", "") |> String.trim()
         name = if name == "", do: "default", else: name
         print_load(pid, name)
-        loop(pid)
+        loop(pid, mode)
 
       String.starts_with?(input, "/provider ") ->
         arg = input |> String.replace_prefix("/provider ", "") |> String.trim()
         parts = String.split(arg, " ", trim: true)
         print_provider(pid, parts)
-        loop(pid)
+        loop(pid, mode)
 
       input == "/provider" ->
         print_provider(pid, [])
-        loop(pid)
+        loop(pid, mode)
 
       input == "/plan" ->
         Ella.Agent.set_mode(pid, :plan)
-        loop(pid)
+        loop(pid, :plan)
 
       input == "/build" || input == "/execute" ->
         Ella.Agent.set_mode(pid, :build)
-        loop(pid)
+        loop(pid, :build)
 
       input == "/review" ->
         Ella.Agent.set_mode(pid, :review)
-        loop(pid)
+        loop(pid, :review)
 
       input == "/init" ->
         print_init()
-        loop(pid)
+        loop(pid, mode)
 
       input == "/setup" ->
         print_setup()
-        loop(pid)
+        loop(pid, mode)
 
       String.starts_with?(input, "/mcp ") ->
         cmd_str = String.replace_prefix(input, "/mcp ", "")
@@ -493,14 +561,14 @@ defmodule Ella do
             Owl.IO.puts("Usage: /mcp list | /mcp <executable> [args...]")
         end
 
-        loop(pid)
+        loop(pid, mode)
 
       input == "" ->
-        loop(pid)
+        loop(pid, mode)
 
       true ->
         Ella.Agent.ask(pid, input)
-        loop(pid)
+        loop(pid, mode)
     end
   end
 end
