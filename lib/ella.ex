@@ -37,7 +37,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [list|models <p>|model <p> <m>|<name>], /save [name], /load [name], /sessions, /mcp list|<executable> [args...], /exit"
+      "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [list|models <p>|test <p>|model <p> <m>|<name>], /save [name], /load [name], /sessions, /mcp list|<executable> [args...], /exit"
     )
 
     {:ok, pid} = Ella.Agent.start_link(mode: :plan)
@@ -216,6 +216,25 @@ defmodule Ella do
     _ -> Owl.IO.puts("Models are not available.")
   end
 
+  defp print_provider(_pid, ["test", provider]) do
+    opts = Ella.LlmClient.provider_opts(provider)
+
+    case Ella.LlmClient.validate(opts) do
+      :ok ->
+        Owl.IO.puts(Owl.Data.tag("Provider '#{provider}' is reachable.", :green))
+
+      {:error, reason} ->
+        Owl.IO.puts(
+          Owl.Data.tag(
+            "Provider '#{provider}' unreachable: #{Ella.Llm.Error.message(reason)}",
+            :red
+          )
+        )
+    end
+  rescue
+    _ -> Owl.IO.puts("Provider test is not available.")
+  end
+
   defp print_provider(pid, ["model", provider, model]) do
     case Ella.Agent.set_model(pid, model) do
       {:ok, ^model} ->
@@ -242,7 +261,7 @@ defmodule Ella do
 
   defp print_provider(_pid, _) do
     Owl.IO.puts(
-      "Usage: /provider | /provider list | /provider models <provider> | /provider model <provider> <model> | /provider <name>"
+      "Usage: /provider | /provider list | /provider models <provider> | /provider test <provider> | /provider model <provider> <model> | /provider <name>"
     )
   end
 
