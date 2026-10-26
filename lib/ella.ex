@@ -37,7 +37,7 @@ defmodule Ella do
     Owl.IO.puts(Owl.Data.tag("=== Привіт це Ella, твій кодінг партнер! ===", :magenta))
 
     Owl.IO.puts(
-      "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider [list|models <p>|test <p>|model <p> <m>|<name>], /save [name], /load [name], /sessions, /mcp list|<executable> [args...], /exit"
+      "Commands: /plan, /build, /review, /setup, /usage, /context, /skills, /protected, /limits, /rewind, /init, /provider, /save [name], /load [name], /sessions, /mcp [list|executable args...], /exit"
     )
 
     Owl.IO.puts(Owl.Data.tag("Type /help for the full command list.", :white))
@@ -183,12 +183,24 @@ defmodule Ella do
 
   defp print_provider(pid, []) do
     info = Ella.Agent.provider_info(pid)
+    provider_key = info.provider
+
+    provider_meta = Ella.Llm.Provider.provider_info(provider_key)
+    display_name = if provider_meta, do: Map.get(provider_meta, :display_name, provider_key), else: provider_key
 
     Owl.IO.puts(Owl.Data.tag("Current provider:", :cyan))
-    Owl.IO.puts("  provider: #{info.provider}")
-    Owl.IO.puts("  adapter:  #{inspect(info.adapter)}")
-    Owl.IO.puts("  model:    #{info.model}")
-    Owl.IO.puts("  base_url: #{info.base_url}")
+    Owl.IO.puts("  provider:     #{provider_key}")
+    Owl.IO.puts("  display_name: #{display_name}")
+    Owl.IO.puts("  adapter:      #{inspect(info.adapter)}")
+    Owl.IO.puts("  model:        #{info.model}")
+    Owl.IO.puts("  base_url:     #{info.base_url}")
+
+    # Show API key status
+    case System.get_env(Ella.Llm.Provider.api_key_env(provider_key)) do
+      nil -> Owl.IO.puts("  api_key:      [not set]")
+      "" -> Owl.IO.puts("  api_key:      [not set]")
+      key -> Owl.IO.puts("  api_key:      [set: #{String.slice(key, 0, 8)}...]")
+    end
   rescue
     _ -> Owl.IO.puts("Provider info is not available.")
   end
@@ -196,19 +208,74 @@ defmodule Ella do
   defp print_provider(_pid, ["list"]) do
     Owl.IO.puts(Owl.Data.tag("Available providers:", :cyan))
 
-    Enum.each(["openai", "poolside", "mistral", "ollama", "opencode"], fn p ->
-      Owl.IO.puts("  #{p}")
+    Enum.each(Ella.Llm.Provider.providers(), fn p ->
+      Owl.IO.puts("  #{p.name} - #{p.display_name} (default: #{p.default_model})")
     end)
+
+    Owl.IO.puts("")
+    Owl.IO.puts("Use /provider models <provider> to see models for a specific provider.")
   end
 
-  defp print_provider(_pid, ["models", provider]) do
-    models = Ella.LlmClient.available_models(provider)
+  # /provider models - fetches from API by default (like other agents)
+  defp print_provider(pid, ["models"]) do
+    info = Ella.Agent.provider_info(pid)
+    current_provider = info.provider
+    show_fetched_models(current_provider)
+  end
 
-    if models == [] do
-      Owl.IO.puts(Owl.Data.tag("No known models for '#{provider}'.", :yellow))
+  # /provider models/all - show all providers' known models
+  defp print_provider(_pid, ["models", "all"]) do
+    Owl.IO.puts(Owl.Data.tag("Known models by provider:", :cyan))
+
+    Enum.each(Ella.Llm.Provider.providers(), fn p ->
+      Owl.IO.puts("\n#{p.display_name} (##{p.name}):")
+      Enum.each(p.models, fn m ->
+        Owl.IO.puts("  #{m["id"]} — #{m["description"]}")
+      end)
+    end)
+  rescue
+    _ -> Owl.IO.puts("Models are not available.")
+  end
+
+  # /provider models <provider> - fetch from API
+  defp print_provider(_pid, ["models", provider]) when is_binary(provider) do
+    show_fetched_models(provider)
+  end
+
+  # Fetch and show models from provider's API
+  defp show_fetched_models(provider) when is_binary(provider) do
+    Owl.IO.puts(Owl.Data.tag("Fetching models from #{provider} API...", :cyan))
+
+    case Ella.LlmClient.fetch_models_from_api(provider) do
+      {:ok, []} ->
+        Owl.IO.puts(Owl.Data.tag("No models returned from API. Showing known defaults.", :yellow))
+        show_known_models(provider)
+
+      {:ok, models} when is_list(models) ->
+        Owl.IO.puts("  #{length(models)} model(s) from API:")
+
+        Enum.each(models, fn m ->
+          Owl.IO.puts("    #{m["id"]}")
+        end)
+
+      {:error, reason} ->
+        Owl.IO.puts(Owl.Data.tag("Failed to fetch models: #{reason}. Showing known defaults.", :yellow))
+        show_known_models(provider)
+    end
+  rescue
+    _ -> show_known_models(provider)
+  end
+
+  defp show_known_models(provider) when is_binary(provider) do
+    models = Ella.Llm.Provider.default_models(provider)
+    provider_info = Ella.Llm.Provider.provider_info(provider)
+    display_name = if provider_info, do: Map.get(provider_info, :display_name, provider), else: provider
+
+    Owl.IO.puts(Owl.Data.tag("Known models for #{display_name} (#{provider}):", :cyan))
+
+    if Enum.empty?(models) do
+      Owl.IO.puts("  No known models.")
     else
-      Owl.IO.puts(Owl.Data.tag("Available models for #{provider}:", :cyan))
-
       Enum.each(models, fn m ->
         Owl.IO.puts("  #{m["id"]} — #{m["description"]}")
       end)
@@ -217,7 +284,7 @@ defmodule Ella do
     _ -> Owl.IO.puts("Models are not available.")
   end
 
-  defp print_provider(_pid, ["test", provider]) do
+  defp print_provider(_pid, ["test", provider]) when is_binary(provider) do
     opts = Ella.LlmClient.provider_opts(provider)
 
     case Ella.LlmClient.validate(opts) do
@@ -236,19 +303,29 @@ defmodule Ella do
     _ -> Owl.IO.puts("Provider test is not available.")
   end
 
-  defp print_provider(pid, ["model", provider, model]) do
-    case Ella.Agent.set_model(pid, model) do
-      {:ok, ^model} ->
-        Owl.IO.puts(Owl.Data.tag("Model for #{provider} set to #{model}.", :green))
+  defp print_provider(pid, ["model", provider, model]) when is_binary(provider) and is_binary(model) do
+    # Validate model exists for provider
+    case Ella.Llm.Provider.valid_model?(provider, model) do
+      false ->
+        valid_models = Ella.Llm.Provider.default_models(provider)
+        model_names = Enum.map(valid_models, & &1["id"])
+        Owl.IO.puts(Owl.Data.tag("Model '#{model}' is not valid for provider '#{provider}'.", :yellow))
+        Owl.IO.puts("Valid models: #{Enum.join(model_names, ", ")}")
 
-      {:error, reason} ->
-        Owl.IO.puts(Owl.Data.tag("Failed to set model: #{inspect(reason)}", :red))
+      true ->
+        case Ella.Agent.set_model(pid, model) do
+          {:ok, ^model} ->
+            Owl.IO.puts(Owl.Data.tag("Model for #{provider} set to #{model}.", :green))
+
+          {:error, reason} ->
+            Owl.IO.puts(Owl.Data.tag("Failed to set model: #{inspect(reason)}", :red))
+        end
     end
   rescue
     _ -> Owl.IO.puts("Model change is not available.")
   end
 
-  defp print_provider(pid, [provider]) do
+  defp print_provider(pid, [provider]) when is_binary(provider) do
     case Ella.Agent.set_provider(pid, provider) do
       {:ok, provider} ->
         Owl.IO.puts(Owl.Data.tag("Switched to provider '#{provider}'.", :green))
@@ -262,7 +339,7 @@ defmodule Ella do
 
   defp print_provider(_pid, _) do
     Owl.IO.puts(
-      "Usage: /provider | /provider list | /provider models <provider> | /provider test <provider> | /provider model <provider> <model> | /provider <name>"
+      "Usage: /provider | /provider list | /provider models [all|<provider>] | /provider test <provider> | /provider model <provider> <model> | /provider <name>"
     )
   end
 
@@ -273,9 +350,11 @@ defmodule Ella do
       {"/plan", "Switch to Plan mode (read-only)"},
       {"/build", "Switch to Build mode (full access)"},
       {"/review", "Switch to Review mode (read-only + checks)"},
-      {"/provider", "Show current provider"},
+      {"/provider", "Show current provider info"},
       {"/provider list", "List available providers"},
-      {"/provider models <p>", "List models for provider"},
+      {"/provider models", "Fetch models from current provider's API"},
+      {"/provider models <p>", "Fetch models from provider's API"},
+      {"/provider models all", "Show all models for all providers"},
       {"/provider test <p>", "Test provider connection"},
       {"/provider model <p> <m>", "Select model for provider"},
       {"/provider <name>", "Switch provider"},
@@ -336,16 +415,19 @@ defmodule Ella do
         Owl.IO.puts(Owl.Data.tag("No API key found for '#{provider}'.", :yellow))
         Owl.IO.puts("Let's set up a provider.")
 
+        available_providers = Enum.map(Ella.Llm.Provider.providers(), & &1.name)
+        prompt = "Provider (#{Enum.join(available_providers, "/")})"
+
         choice =
-          Owl.IO.input(label: "Provider (openai/poolside/mistral/ollama/opencode)")
+          Owl.IO.input(label: prompt)
           |> String.trim()
 
         provider = if choice == "", do: provider, else: choice
         System.put_env("LLM_PROVIDER", provider)
         Ella.Storage.save_provider(provider)
 
-        unless provider in ["ollama", "opencode"] do
-          key_env = key_env_for(provider)
+        unless Ella.Llm.Provider.requires_api_key?(provider) do
+          key_env = Ella.Llm.Provider.api_key_env(provider)
 
           if System.get_env(key_env) in [nil, ""] do
             key = Owl.IO.input(label: "API key for #{provider}") |> String.trim()
@@ -377,23 +459,20 @@ defmodule Ella do
   end
 
   defp provider_has_key?(provider) do
-    case String.downcase(provider) do
+    provider_key = String.downcase(provider)
+
+    case provider_key do
       "ollama" -> true
       "opencode" -> true
-      "openai" -> present?(System.get_env("OPENAI_API_KEY"))
-      "poolside" -> present?(System.get_env("POOLSIDE_API_KEY"))
-      "mistral" -> present?(System.get_env("MISTRAL_API_KEY"))
-      _ -> true
+      _ ->
+        key_env = Ella.Llm.Provider.api_key_env(provider)
+        present?(System.get_env(key_env))
     end
   end
 
   defp present?(nil), do: false
   defp present?(""), do: false
   defp present?(_), do: true
-
-  defp key_env_for("poolside"), do: "POOLSIDE_API_KEY"
-  defp key_env_for("mistral"), do: "MISTRAL_API_KEY"
-  defp key_env_for(_), do: "OPENAI_API_KEY"
 
   defp print_init do
     root = File.cwd!()

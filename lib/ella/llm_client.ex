@@ -7,48 +7,19 @@ defmodule Ella.LlmClient do
   GenServer і не має підходячого місця для очікування.
   """
 
-  alias Ella.Llm.{Error, Usage}
+  alias Ella.Llm.{Error, Usage, Provider}
 
   @default_max_attempts 4
   @base_delay_ms 500
   @max_delay_ms 30_000
 
-  # Доступні моделі по провайдерах (для /provider models <провайдер>).
-  # Можна розширювати через змінні середовища або конфіг проєкту.
-  @available_models %{
-    "openai" => [
-      %{"id" => "gpt-4o", "description" => "GPT-4o — флагманська модель OpenAI"},
-      %{"id" => "gpt-4o-mini", "description" => "GPT-4o Mini — швидка і ефективна"},
-      %{"id" => "gpt-4-turbo", "description" => "GPT-4 Turbo — потужне розуміння"},
-      %{"id" => "gpt-3.5-turbo", "description" => "GPT-3.5 Turbo — легасова, швидка"}
-    ],
-    "poolside" => [
-      %{"id" => "poolside-code", "description" => "Poolside Code — асистент для коду"},
-      %{"id" => "poolside-chat", "description" => "Poolside Chat — загальна розмова"}
-    ],
-    "mistral" => [
-      %{"id" => "codestral-latest", "description" => "Codestral — орієнтована на код"},
-      %{"id" => "mistral-large-latest", "description" => "Mistral Large — флагманська"},
-      %{"id" => "mistral-medium-latest", "description" => "Mistral Medium — збалансована"},
-      %{"id" => "mistral-small-latest", "description" => "Mistral Small — швидка"}
-    ],
-    "ollama" => [
-      %{"id" => "gemma4:31b-cloud", "description" => "Gemma 4 31B"},
-      %{"id" => "llama3.1:8b", "description" => "Llama 3.1 8B"},
-      %{"id" => "llama3.1:70b", "description" => "Llama 3.1 70B"},
-      %{"id" => "codellama:13b", "description" => "Code Llama 13B"}
-    ],
-    "opencode" => [
-      %{"id" => "opencode-recommended", "description" => "OpenCode рекомендована модель"}
-    ]
-  }
-
   @doc """
   Список доступних моделей для заданого провайдера.
+  Див. також `Ella.Llm.Provider.default_models/1`.
   """
   @spec available_models(String.t()) :: [map()]
   def available_models(provider) when is_binary(provider) do
-    Map.get(@available_models, String.downcase(provider), [])
+    Provider.default_models(provider)
   end
 
   @doc """
@@ -252,59 +223,68 @@ defmodule Ella.LlmClient do
   end
 
   defp default_adapter do
-    adapter_for(System.get_env("LLM_PROVIDER") || "openai")
+    Provider.adapter_for(System.get_env("LLM_PROVIDER") || "openai")
   end
 
   @doc """
   Адаптер для заданого провайдера (без звернення до змінних середовища).
+
+  Див. також `Ella.Llm.Provider.adapter_for/1`.
   """
   def adapter_for(provider) when is_binary(provider) do
-    case String.downcase(provider) do
-      "poolside" -> Ella.Llm.Adapters.Poolside
-      _ -> Ella.Llm.Adapters.OpenAI
-    end
+    Provider.adapter_for(provider)
   end
 
   @doc """
   Конфігурація (base_url, api_key, model) для заданого провайдера.
+
+  Uses environment variables for customization, falling back to Provider defaults.
   """
   def config_for(provider) when is_binary(provider) do
+    provider_key = String.downcase(provider)
     selected = selected_model_for(provider)
 
-    case String.downcase(provider) do
+    case provider_key do
+      "openai" ->
+        [
+          base_url: System.get_env("OPENAI_BASE_URL") || Provider.base_url("openai"),
+          api_key: System.get_env("OPENAI_API_KEY"),
+          model: selected || Provider.default_model("openai")
+        ]
+
       "poolside" ->
         [
-          base_url: System.get_env("POOLSIDE_BASE_URL") || "https://api.poolside.ai/v1",
+          base_url: System.get_env("POOLSIDE_BASE_URL") || Provider.base_url("poolside"),
           api_key: System.get_env("POOLSIDE_API_KEY"),
-          model: selected || "poolside-code"
+          model: selected || Provider.default_model("poolside")
         ]
 
       "mistral" ->
         [
           base_url: "https://api.mistral.ai/v1",
           api_key: System.get_env("MISTRAL_API_KEY"),
-          model: selected || "codestral-latest"
+          model: selected || Provider.default_model("mistral")
         ]
 
       "opencode" ->
         [
-          base_url: System.get_env("OPENCODE_BASE_URL") || "http://localhost:4096/v1",
+          base_url: System.get_env("OPENCODE_BASE_URL") || Provider.base_url("opencode"),
           api_key: System.get_env("OPENCODE_API_KEY") || "free",
-          model: selected || "opencode-recommended"
+          model: selected || Provider.default_model("opencode")
         ]
 
       "ollama" ->
         [
-          base_url: System.get_env("OLLAMA_BASE_URL") || "http://localhost:11434/v1",
+          base_url: System.get_env("OLLAMA_BASE_URL") || Provider.base_url("ollama"),
           api_key: "ollama",
-          model: selected || "gemma4:31b-cloud"
+          model: selected || Provider.default_model("ollama")
         ]
 
       _ ->
         [
-          base_url: System.get_env("OPENAI_BASE_URL") || "https://api.openai.com/v1",
+          base_url: System.get_env("OPENAI_BASE_URL") || Provider.base_url("openai"),
           api_key: System.get_env("OPENAI_API_KEY"),
-          model: selected || "gpt-4o"
+          model: selected || Provider.default_model("openai")
         ]
     end
   end
@@ -347,7 +327,7 @@ defmodule Ella.LlmClient do
       _ ->
         api_key = Keyword.get(config, :api_key)
         if api_key == nil or api_key == "" do
-          {:error, "API key not set for #{provider}. Set #{key_env_for(provider)} or configure via /provider."}
+          {:error, "API key not set for #{provider}. Set #{Provider.api_key_env(provider)} or configure via /provider."}
         else
           :ok
         end
@@ -356,12 +336,6 @@ defmodule Ella.LlmClient do
 
   defp provider_from_adapter(Ella.Llm.Adapters.Poolside), do: "poolside"
   defp provider_from_adapter(_), do: "openai"
-
-  defp key_env_for("poolside"), do: "POOLSIDE_API_KEY"
-  defp key_env_for("mistral"), do: "MISTRAL_API_KEY"
-  defp key_env_for("openai"), do: "OPENAI_API_KEY"
-  defp key_env_for("opencode"), do: "OPENCODE_API_KEY"
-  defp key_env_for(_), do: "OPENAI_API_KEY"
 
   @doc """
   Готові llm_opts для заданого провайдера.
@@ -380,13 +354,83 @@ defmodule Ella.LlmClient do
 
   defp default_config_for(Ella.Llm.Adapters.Poolside) do
     [
-      base_url: System.get_env("POOLSIDE_BASE_URL") || "https://api.poolside.ai/v1",
+      base_url: System.get_env("POOLSIDE_BASE_URL") || Provider.base_url("poolside"),
       api_key: System.get_env("POOLSIDE_API_KEY"),
-      model: System.get_env("LLM_MODEL") || "poolside-code"
+      model: System.get_env("LLM_MODEL") || Provider.default_model("poolside")
     ]
   end
 
   # Кастомні адаптери отримують порожній конфіг: все необхідне вони
   # мають передати самі через :config.
   defp default_config_for(_other_adapter), do: []
+
+  @doc """
+  Fetches available models from the provider's API.
+
+  Returns `{:ok, [models]}` where each model has at least `id` and may have `object` fields.
+  Returns `{:error, reason}` on failure.
+
+  Note: Some providers (Ollama, OpenCode) may not have a standard `/models` endpoint.
+  """
+  @spec fetch_models_from_api(String.t()) :: {:ok, [map()]} | {:error, term()}
+  def fetch_models_from_api(provider) when is_binary(provider) do
+    provider_key = String.downcase(provider)
+
+    # Get API key for auth
+    case get_api_key(provider_key) do
+      nil ->
+        {:error, "No API key configured for #{provider}"}
+
+      api_key ->
+        config = config_for(provider)
+        base_url = Keyword.get(config, :base_url)
+
+        do_fetch_models(base_url, api_key, provider_key)
+    end
+  end
+
+  defp get_api_key(provider_key) do
+    env_var = Provider.api_key_env(provider_key)
+    System.get_env(env_var)
+  end
+
+  # OpenAI-compatible API (OpenAI, Poolside, Mistral, Ollama, OpenCode)
+  defp do_fetch_models(base_url, api_key, _provider_key) do
+    request =
+      Req.new(
+        base_url: base_url,
+        headers: [
+          {"authorization", "Bearer #{api_key}"},
+          {"content-type", "application/json"}
+        ],
+        receive_timeout: 30_000
+      )
+      |> Req.get(url: "/models")
+
+    case request do
+      {:ok, %Req.Response{status: 200, body: %{
+                      "data" => model_list
+                    }}} ->
+        # Transform API response to standard format
+        models =
+          Enum.map(model_list, fn m ->
+            %{
+              "id" => Map.get(m, "id"),
+              "object" => Map.get(m, "object", "model"),
+              "created" => Map.get(m, "created"),
+              "owned_by" => Map.get(m, "owned_by")
+            }
+          end)
+
+        {:ok, models}
+
+      {:ok, %Req.Response{status: status, body: body}} ->
+        {:error, "API returned #{status}: #{inspect(body)}"}
+
+      {:error, reason} ->
+        {:error, "Network error: #{inspect(reason)}"}
+    end
+  rescue
+    e -> {:error, "Request failed: #{Exception.message(e)}"}
+  end
 end

@@ -183,4 +183,55 @@ defmodule Ella.LlmClientTest do
       assert LlmClient.backoff(50) <= 30_000
     end
   end
+
+  describe "адаптери та провайдери" do
+    test "adapter_for/1 повертає правильний адаптер для openai" do
+      assert LlmClient.adapter_for("openai") == Ella.Llm.Adapters.OpenAI
+    end
+
+    test "adapter_for/1 повертає правильний адаптер для poolside" do
+      assert LlmClient.adapter_for("poolside") == Ella.Llm.Adapters.Poolside
+    end
+
+    test "available_models/1 повертає моделі для відомих провайдерів" do
+      openai_models = LlmClient.available_models("openai")
+      assert is_list(openai_models)
+      assert length(openai_models) >= 4
+
+      model_ids = Enum.map(openai_models, & &1["id"])
+      assert "gpt-4o" in model_ids
+    end
+
+    test "available_models/1 повертає порожній список для невідомих провайдерів" do
+      assert LlmClient.available_models("unknown") == []
+    end
+
+    test "config_for/1 повертає базову конфігурацію для openai" do
+      config = LlmClient.config_for("openai")
+      assert Keyword.has_key?(config, :base_url)
+      assert Keyword.has_key?(config, :api_key)
+      assert Keyword.has_key?(config, :model)
+    end
+
+    test "config_for/1 використовує LLM_MODEL з середовища" do
+      original = System.get_env("LLM_MODEL")
+      System.put_env("LLM_MODEL", "gpt-4o-mini")
+
+      config = LlmClient.config_for("openai")
+      assert Keyword.get(config, :model) == "gpt-4o-mini"
+
+      if original do
+        System.put_env("LLM_MODEL", original)
+      else
+        System.delete_env("LLM_MODEL")
+      end
+    end
+
+    test "provider_opts/1 повертає комплектні опції" do
+      opts = LlmClient.provider_opts("openai")
+      assert Keyword.has_key?(opts, :adapter)
+      assert Keyword.has_key?(opts, :config)
+      assert Keyword.has_key?(opts, :max_attempts)
+    end
+  end
 end

@@ -298,8 +298,75 @@ The model defaults to `gpt-4o` (OpenAI), `poolside-code` (Poolside), `codestral-
 | `/save [name]` | Save the current conversation (history, mode, usage) under a name |
 | `/load [name]` | Restore a previously saved conversation |
 | `/sessions` | List saved conversations |
+| `/provider` | Show current provider info (provider, model, adapter, base_url, API key status) |
+| `/provider list` | List all available providers with default models |
+| `/provider models` | Show models for current provider |
+| `/provider models all` | Show all models for all providers |
+| `/provider models/fetch <p>` | Fetch models directly from provider's API |
+| `/provider test <p>` | Validate provider configuration (API key, connection) |
+| `/provider model <p> <m>` | Select a model for provider (validates model exists) |
+| `/provider <name>` | Switch to a different provider |
 | `/mcp [executable args]` | Register an MCP server (or show help if called without args) |
 | `/exit` | Terminate the session |
+
+### Provider Configuration
+
+Use `/provider` to view your current provider configuration. This shows:
+
+- **provider**: The provider identifier (e.g., `openai`, `poolside`)
+- **display_name**: Human-readable name
+- **adapter**: The adapter module being used
+- **model**: The currently selected model
+- **base_url**: The API endpoint
+- **api_key**: Whether the API key is set (first 8 chars shown)
+
+Example output:
+```
+Current provider:
+  provider:     openai
+  display_name: OpenAI
+  adapter:      Ella.Llm.Adapters.OpenAI
+  model:        gpt-4o
+  base_url:     https://api.openai.com/v1
+  api_key:      [set: sk-proj-1...]
+```
+
+Use `/provider models` to fetch models from your current provider's API (like other agents do):
+
+```
+Fetching models from openai API...
+  15 model(s) from API:
+    gpt-4o
+    gpt-4o-mini
+    gpt-4o-chat
+    gpt-4o-image
+    ...
+```
+
+If the API fetch fails, it falls back to showing the known/default models from Ella's definitions.
+
+Use `/provider models <provider>` to fetch models from a specific provider's API:
+
+```
+Fetching models from poolside API...
+  10 model(s) from API:
+    poolside-code
+    poolside-chat
+    ...
+```
+
+Use `/provider models all` to see all known models for all providers (from Ella's built-in definitions):
+
+```
+Known models by provider:
+OpenAI (openai):
+  gpt-4o — GPT-4o flagship model, realtime vision
+  ...
+
+Poolside (poolside):
+  poolside-code — Poolside Code, coding assistant
+  ...
+```
 
 ### Reliability
 
