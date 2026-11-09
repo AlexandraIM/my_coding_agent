@@ -88,9 +88,9 @@ defmodule Ella.LlmClient do
          verbose
        ) do
     if verbose do
-      Owl.IO.puts(Owl.Data.tag("--- [LLM REQUEST START] ---", :magenta))
-      Owl.IO.puts([Owl.Data.tag("Adapter: ", :cyan), inspect(adapter)])
-      Owl.IO.puts([Owl.Data.tag("Config: ", :cyan), inspect(redact(config))])
+      Ella.Output.puts(Ella.Output.tag("--- [LLM REQUEST START] ---", :magenta))
+      Ella.Output.puts([Ella.Output.tag("Adapter: ", :cyan), inspect(adapter)])
+      Ella.Output.puts([Ella.Output.tag("Config: ", :cyan), inspect(redact(config))])
     end
 
     result = invoke(adapter, messages, tools, config, on_text)
@@ -98,8 +98,8 @@ defmodule Ella.LlmClient do
     case result do
       {:ok, message, usage} ->
         if verbose do
-          Owl.IO.puts(Owl.Data.tag("--- [LLM RESPONSE SUCCESS] ---", :green))
-          Owl.IO.puts([Owl.Data.tag("Tokens: ", :cyan), Usage.format(usage || Usage.empty())])
+          Ella.Output.puts(Ella.Output.tag("--- [LLM RESPONSE SUCCESS] ---", :green))
+          Ella.Output.puts([Ella.Output.tag("Tokens: ", :cyan), Usage.format(usage || Usage.empty())])
         end
 
         {:ok, message, usage || estimated_usage(messages)}
@@ -123,7 +123,7 @@ defmodule Ella.LlmClient do
             on_retry.(n, error, delay)
 
             if verbose do
-              Owl.IO.puts(Owl.Data.tag("Retry #{n}/#{max_attempts} in #{delay}ms", :yellow))
+              Ella.Output.puts(Ella.Output.tag("Retry #{n}/#{max_attempts} in #{delay}ms", :yellow))
             end
 
             sleep_fn.(delay)
@@ -159,7 +159,7 @@ defmodule Ella.LlmClient do
     # Owl не переносить рядки сам, тому друкуємо фрагменти як є:
     # укороткі шматки просто зливались б в один рядок.
     if String.length(fragment) > 80 do
-      Owl.IO.puts(Owl.Data.tag(fragment, :blue))
+      Ella.Output.puts(Ella.Output.tag(fragment, :blue))
     else
       IO.write(fragment)
     end
@@ -187,10 +187,10 @@ defmodule Ella.LlmClient do
   end
 
   defp default_on_retry(attempt, error, delay) do
-    Owl.IO.puts([
-      Owl.Data.tag("[LLM retry #{attempt}] ", :yellow),
-      Owl.Data.tag(Error.message(error), :red),
-      Owl.Data.tag(" — waiting #{delay}ms", :yellow)
+    Ella.Output.puts([
+      Ella.Output.tag("[LLM retry #{attempt}] ", :yellow),
+      Ella.Output.tag(Error.message(error), :red),
+      Ella.Output.tag(" — waiting #{delay}ms", :yellow)
     ])
   end
 

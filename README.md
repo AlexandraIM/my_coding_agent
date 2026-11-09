@@ -402,6 +402,21 @@ invocation split across ten chunks arrives at the agent as one executable call r
 half-built ones. Provider-specific shapes (flat `name`/`arguments`, a missing `id`) are normalised
 to the same structure before the agent sees them.
 
+## Terminal UI (TUI)
+
+Ella ships an optional full-screen TUI built on [TermUI](https://hex.pm/packages/term_ui):
+
+```sh
+ELLA_TUI=1 ella          # force TUI
+ella --tui               # same
+ELLA_TUI=0 ella          # force classic REPL (default under `mix`)
+```
+
+- Standalone binaries prefer the TUI by default; `mix run` keeps the classic REPL.
+- Layout: scrollable output pane, status bar (mode/provider/model/usage), input box.
+- Commands: `/plan`, `/build`, `/review`, `/provider`, `/usage`, `/context`, `/help`, `/exit`.
+- Disable the optional native TTY NIF for Burrito builds with `TERM_UI_TTY_NIF=disabled`.
+
 ## Typical Workflow
 
 The recommended workflow for using Ella is as follows:

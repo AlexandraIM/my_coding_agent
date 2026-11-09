@@ -59,16 +59,16 @@ defmodule Ella.Approve do
   end
 
   defp prompt(tool_name, path) do
-    IO.puts("")
+    Ella.Output.blank()
 
-    Owl.IO.puts([
-      Owl.Data.tag("PROTECTED FILE: ", :red),
+    Ella.Output.puts([
+      Ella.Output.tag("PROTECTED FILE: ", :red),
       path,
       "\n",
-      Owl.Data.tag("The agent wants to change it with ", :yellow),
+      Ella.Output.tag("The agent wants to change it with ", :yellow),
       tool_name,
       "\n",
-      Owl.Data.tag("Allow? [y/N] ", :yellow)
+      Ella.Output.tag("Allow? [y/N] ", :yellow)
     ])
 
     answer =
@@ -84,8 +84,8 @@ defmodule Ella.Approve do
   end
 
   defp warn_permissive(tool_name, path) do
-    Owl.IO.puts(
-      Owl.Data.tag(
+    Ella.Output.puts(
+      Ella.Output.tag(
         "[protected] #{path} changed by #{tool_name} without approval " <>
           "(require_approval is false)",
         :yellow

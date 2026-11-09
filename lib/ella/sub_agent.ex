@@ -95,23 +95,23 @@ defmodule Ella.SubAgent do
 
   @impl true
   def handle_call(:execute, _from, state) do
-    Owl.IO.puts(Owl.Data.tag("┌─ SubAgent ──────────────────────────────────────────────", :magenta))
+    Ella.Output.puts(Ella.Output.tag("┌─ SubAgent ──────────────────────────────────────────────", :magenta))
 
     case run_loop(state.messages, state, 0) do
       {:ok, summary, usage} ->
-        Owl.IO.puts(Owl.Data.tag("└─ SubAgent finished ──────────────────────────────────────", :green))
+        Ella.Output.puts(Ella.Output.tag("└─ SubAgent finished ──────────────────────────────────────", :green))
         {:stop, :normal, {:ok, summary, usage}, state}
 
       {:error, reason, usage} ->
-        Owl.IO.puts(Owl.Data.tag("└─ SubAgent failed ────────────────────────────────────────", :red))
+        Ella.Output.puts(Ella.Output.tag("└─ SubAgent failed ────────────────────────────────────────", :red))
         {:stop, :normal, {:error, reason, usage}, state}
 
       {:ok, summary} ->
-        Owl.IO.puts(Owl.Data.tag("└─ SubAgent finished ──────────────────────────────────────", :green))
+        Ella.Output.puts(Ella.Output.tag("└─ SubAgent finished ──────────────────────────────────────", :green))
         {:stop, :normal, {:ok, summary, Usage.empty()}, state}
 
       {:error, reason} ->
-        Owl.IO.puts(Owl.Data.tag("└─ SubAgent failed ────────────────────────────────────────", :red))
+        Ella.Output.puts(Ella.Output.tag("└─ SubAgent failed ────────────────────────────────────────", :red))
         {:stop, :normal, {:error, reason}, state}
     end
   end
@@ -154,7 +154,7 @@ defmodule Ella.SubAgent do
             state = %{state | usage: Usage.add(state.usage, usage)}
 
             if streamed?() do
-              IO.puts("")
+              Ella.Output.blank()
             end
 
             updated_messages = messages ++ [message]
@@ -164,8 +164,8 @@ defmodule Ella.SubAgent do
                 tool_name = call["function"]["name"]
                 call_id = call["id"]
 
-                Owl.IO.puts([
-                  Owl.Data.tag("  [SubAgent Tool]: #{tool_name} ", :yellow),
+                Ella.Output.puts([
+                  Ella.Output.tag("  [SubAgent Tool]: #{tool_name} ", :yellow),
                   compact_args(tool_name, call["function"]["arguments"])
                 ])
 
@@ -197,10 +197,10 @@ defmodule Ella.SubAgent do
 
   defp finish_turn(content) do
     if streamed?() do
-      IO.puts("")
-      IO.puts("")
+      Ella.Output.blank()
+      Ella.Output.blank()
     else
-      Owl.IO.puts([Owl.Data.tag("[SubAgent] ", :blue), content])
+      Ella.Output.puts([Ella.Output.tag("[SubAgent] ", :blue), content])
     end
   end
 

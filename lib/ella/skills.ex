@@ -75,10 +75,10 @@ defmodule Ella.Skills do
       try do
         seed_defaults()
         Application.put_env(:ella, :default_skills_seeded, true)
-        Owl.IO.puts(Owl.Data.tag("Seeded default skills to ~/.ella/skills/", :magenta))
+        Ella.Output.puts(Ella.Output.tag("Seeded default skills to ~/.ella/skills/", :magenta))
       rescue
         e ->
-          Owl.IO.puts(Owl.Data.tag("Failed to seed default skills: #{Exception.message(e)}", :yellow))
+          Ella.Output.puts(Ella.Output.tag("Failed to seed default skills: #{Exception.message(e)}", :yellow))
       end
     end
   end
@@ -276,8 +276,8 @@ defmodule Ella.Skills do
 
           {:error, reason} ->
             # Одна бита навичка не повинна ламати весь агент.
-            Owl.IO.puts(
-              Owl.Data.tag("[skills] skipping #{Path.basename(path)}: #{reason}", :yellow)
+            Ella.Output.puts(
+              Ella.Output.tag("[skills] skipping #{Path.basename(path)}: #{reason}", :yellow)
             )
 
             []

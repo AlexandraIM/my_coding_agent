@@ -91,7 +91,7 @@ defmodule Ella.Agent do
     skills = Ella.Skills.load_all()
 
     if skills != [] do
-      Owl.IO.puts(Owl.Data.tag("Loaded #{length(skills)} project skill(s)", :magenta))
+      Ella.Output.puts(Ella.Output.tag("Loaded #{length(skills)} project skill(s)", :magenta))
     end
 
     context_opts =
@@ -141,7 +141,7 @@ defmodule Ella.Agent do
         :build -> "BUILDING (Full Access)"
       end
 
-    Owl.IO.puts(Owl.Data.tag("Switched to #{mode_name} mode.", :magenta))
+    Ella.Output.puts(Ella.Output.tag("Switched to #{mode_name} mode.", :magenta))
     {:reply, {:ok, new_mode}, new_state}
   end
 
@@ -158,7 +158,7 @@ defmodule Ella.Agent do
         config_map = Map.new(config, fn {k, v} -> {to_string(k), v} end)
         Ella.Storage.save_provider(provider, config_map)
 
-        Owl.IO.puts(Owl.Data.tag("Switched provider to #{provider}.", :magenta))
+        Ella.Output.puts(Ella.Output.tag("Switched provider to #{provider}.", :magenta))
         {:reply, {:ok, provider}, new_state}
 
       {:error, reason} ->
@@ -181,7 +181,7 @@ defmodule Ella.Agent do
     new_state = %{state | llm_opts: new_llm_opts}
     publish_context(new_state)
 
-    Owl.IO.puts(Owl.Data.tag("Model for #{current_provider}: #{model}", :magenta))
+    Ella.Output.puts(Ella.Output.tag("Model for #{current_provider}: #{model}", :magenta))
     {:reply, {:ok, model}, new_state}
   end
 
@@ -217,8 +217,8 @@ defmodule Ella.Agent do
             server_name = Path.basename(executable) <> "_" <> Enum.join(args, "_")
             Storage.save_mcp_server(server_name, executable, args)
 
-            Owl.IO.puts(
-              Owl.Data.tag(
+            Ella.Output.puts(
+              Ella.Output.tag(
                 "Зареєстровано та збережено #{length(wrapped_tools)} MCP tools",
                 :green
               )
@@ -262,7 +262,7 @@ defmodule Ella.Agent do
     new_state = %{state | skills: skills, active_skill: nil} |> update_system_prompt()
     publish_context(new_state)
 
-    Owl.IO.puts(Owl.Data.tag("Reloaded #{length(skills)} project skill(s)", :magenta))
+    Ella.Output.puts(Ella.Output.tag("Reloaded #{length(skills)} project skill(s)", :magenta))
     {:reply, Enum.map(skills, & &1.name), new_state}
   end
 
@@ -336,7 +336,7 @@ defmodule Ella.Agent do
 
   @impl true
   def handle_call({:ask, user_prompt}, _from, state) do
-    Owl.IO.puts([Owl.Data.tag("User: ", :green), user_prompt])
+    Ella.Output.puts([Ella.Output.tag("User: ", :green), user_prompt])
 
     # Нова задача — нові правила: обмеження навички з минулого
     # запиту більше не діють.
@@ -384,8 +384,8 @@ defmodule Ella.Agent do
     dropped = length(mcp_tools) - length(plan_mcp)
 
     if dropped > 0 do
-      Owl.IO.puts(
-        Owl.Data.tag(
+      Ella.Output.puts(
+        Ella.Output.tag(
           "[plan mode] #{dropped} MCP tool(s) hidden: not marked read-only.",
           :yellow
         )
@@ -519,7 +519,7 @@ defmodule Ella.Agent do
       "Iteration limit reached (#{state.max_iterations}). " <>
         "Stopping the loop and returning control to the user."
 
-    Owl.IO.puts(Owl.Data.tag(notice, :yellow))
+    Ella.Output.puts(Ella.Output.tag(notice, :yellow))
 
     # Форма повернення має збігатися з handle_call: історія, текст
     # відповіді та облік. Раніше тут бракувало повідомлень, тож
@@ -529,7 +529,7 @@ defmodule Ella.Agent do
 
   defp run_loop(messages, active_tools, state, current_iter) do
     tool_map = build_tool_map(active_tools)
-    Owl.IO.puts(Owl.Data.tag("Thinking (#{state.mode} mode)...", :cyan))
+    Ella.Output.puts(Ella.Output.tag("Thinking (#{state.mode} mode)...", :cyan))
 
     prepared = prepare_context(messages, state)
 
@@ -586,8 +586,8 @@ defmodule Ella.Agent do
           before = Ella.Context.estimate(messages)
           after_compact = Ella.Context.estimate(compacted)
 
-          Owl.IO.puts(
-            Owl.Data.tag(
+          Ella.Output.puts(
+            Ella.Output.tag(
               "[context] compacted #{before} -> #{after_compact} tokens " <>
                 "(#{length(messages)} -> #{length(compacted)} messages)",
               :yellow
@@ -637,8 +637,8 @@ defmodule Ella.Agent do
             tool_name = call["function"]["name"]
             call_id = call["id"]
 
-            Owl.IO.puts([
-              Owl.Data.tag("Tool Call [#{tool_name}]: ", :yellow),
+            Ella.Output.puts([
+              Ella.Output.tag("Tool Call [#{tool_name}]: ", :yellow),
               compact_args(tool_name, call["function"]["arguments"])
             ])
 
@@ -686,7 +686,7 @@ defmodule Ella.Agent do
         {:ok, original_messages ++ [message], message["content"] || "Done.", state.usage}
 
       {:error, reason} ->
-        Owl.IO.puts(Owl.Data.tag("Error calling LLM: #{Ella.Llm.Error.message(reason)}", :red))
+        Ella.Output.puts(Ella.Output.tag("Error calling LLM: #{Ella.Llm.Error.message(reason)}", :red))
         {:error, reason, state.usage}
     end
   end
@@ -695,9 +695,9 @@ defmodule Ella.Agent do
   # ("Wait", "Actually" тощо), це не слід показувати користувачу.
   # Показуємо лише фінальну відповідь після завершення потоку.
   defp finish_turn(content) do
-    IO.puts("")
-    Owl.IO.puts([Owl.Data.tag("Agent: ", :blue), content])
-    IO.puts("")
+    Ella.Output.blank()
+    Ella.Output.puts([Ella.Output.tag("Agent: ", :blue), content])
+    Ella.Output.blank()
   end
 
   # Під час стріму фрагменти не друкуємо, щоб не витікав внутрішній
@@ -847,8 +847,8 @@ defmodule Ella.Agent do
             {:ok, %{"tools" => tools}} ->
               wrapped_tools = Enum.map(tools, &ToolAdapter.to_agent_tool(mcp_pid, &1))
 
-              Owl.IO.puts(
-                Owl.Data.tag(
+              Ella.Output.puts(
+                Ella.Output.tag(
                   "Auto-restored MCP [#{name}] with #{length(wrapped_tools)} tools",
                   :green
                 )

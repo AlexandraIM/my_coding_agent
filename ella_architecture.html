@@ -315,7 +315,7 @@
               Stream --> Decision{"Що повернула модель?"}
             end
 
-            Decision -- "Текстова відповідь" --> UserOutput["Owl.IO: Вивід користувачу"]
+            Decision -- "Текстова відповідь" --> UserOutput["Ella.Output: Вивід (REPL/TUI)"]
             
             subgraph ToolExecution ["Виконання інструментів"]
               Decision -- "Tool Call" --> SafetyCheck{"Перевірка режиму та Sandbox"}
@@ -363,6 +363,13 @@
           <div class="feature-title">Рекурсивні під-агенти</div>
           <div class="feature-desc">
             <code>Ella.SubAgent</code> дозволяє основному агенту створювати ізольовані робочі потоки для підзадач, що запобігає "зашумленню" головного контексту.
+          </div>
+        </div>
+        <div class="feature-box">
+          <div class="feature-icon">🖥️</div>
+          <div class="feature-title">Термінальний UI (TUI)</div>
+          <div class="feature-desc">
+            Опційний повноекранний інтерфейс на базі <code>TermUI</code>. <code>Ella.Output</code> — єдиний sink: REPL (Owl) або TUI. За замовчуванням TUI у standalone-бінарнику, REPL під <code>mix</code>.
           </div>
         </div>
       </div>

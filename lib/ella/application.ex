@@ -26,12 +26,30 @@ defmodule Ella.Application do
   жоден процес не завершиться — цикл чекає на введення.
   """
   def run_cli do
-    Ella.start_cli()
+    tui? =
+      case System.get_env("ELLA_TUI") do
+        "0" -> false
+        "1" -> true
+        _ -> not mix_env?()
+      end
+
+    if tui? do
+      Ella.Tui.run()
+    else
+      Ella.start_cli()
+    end
+
     System.halt(0)
   catch
     kind, reason ->
       IO.puts(:stderr, "Ella exited unexpectedly: #{Exception.format(kind, reason, [])}\n")
       System.halt(1)
+  end
+
+  defp mix_env? do
+    Code.ensure_loaded?(Mix)
+  rescue
+    _ -> false
   end
 
   # Burritory позначає середовище змінною __BURRITO. Дивимосься на неї
