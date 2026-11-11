@@ -70,7 +70,9 @@ defmodule Ella.SeedDefaultsTest do
         Enum.each(files, fn file ->
           File.rm(Path.join(skills_dir, file))
         end)
-      _ -> :ok
+
+      _ ->
+        :ok
     end
 
     Skills.seed_defaults_to(skills_dir)
@@ -106,6 +108,7 @@ defmodule Ella.SeedDefaultsTest do
       # is platform-dependent and can be brittle.
       try do
         :file.change_mode(skills_dir, 0o555)
+
         on_exit(fn ->
           :file.change_mode(skills_dir, 0o755)
         end)
@@ -113,7 +116,7 @@ defmodule Ella.SeedDefaultsTest do
         # Should not raise, just log
         Skills.seed_defaults_to(skills_dir)
       rescue
-        _ -> 
+        _ ->
           # If we can't change mode or check it, we skip this test case
           :ok
       end

@@ -95,23 +95,37 @@ defmodule Ella.SubAgent do
 
   @impl true
   def handle_call(:execute, _from, state) do
-    Ella.Output.puts(Ella.Output.tag("┌─ SubAgent ──────────────────────────────────────────────", :magenta))
+    Ella.Output.puts(
+      Ella.Output.tag("┌─ SubAgent ──────────────────────────────────────────────", :magenta)
+    )
 
     case run_loop(state.messages, state, 0) do
       {:ok, summary, usage} ->
-        Ella.Output.puts(Ella.Output.tag("└─ SubAgent finished ──────────────────────────────────────", :green))
+        Ella.Output.puts(
+          Ella.Output.tag("└─ SubAgent finished ──────────────────────────────────────", :green)
+        )
+
         {:stop, :normal, {:ok, summary, usage}, state}
 
       {:error, reason, usage} ->
-        Ella.Output.puts(Ella.Output.tag("└─ SubAgent failed ────────────────────────────────────────", :red))
+        Ella.Output.puts(
+          Ella.Output.tag("└─ SubAgent failed ────────────────────────────────────────", :red)
+        )
+
         {:stop, :normal, {:error, reason, usage}, state}
 
       {:ok, summary} ->
-        Ella.Output.puts(Ella.Output.tag("└─ SubAgent finished ──────────────────────────────────────", :green))
+        Ella.Output.puts(
+          Ella.Output.tag("└─ SubAgent finished ──────────────────────────────────────", :green)
+        )
+
         {:stop, :normal, {:ok, summary, Usage.empty()}, state}
 
       {:error, reason} ->
-        Ella.Output.puts(Ella.Output.tag("└─ SubAgent failed ────────────────────────────────────────", :red))
+        Ella.Output.puts(
+          Ella.Output.tag("└─ SubAgent failed ────────────────────────────────────────", :red)
+        )
+
         {:stop, :normal, {:error, reason}, state}
     end
   end

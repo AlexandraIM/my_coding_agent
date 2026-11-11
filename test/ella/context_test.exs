@@ -145,6 +145,22 @@ defmodule Ella.ContextTest do
 
       assert {:error, :too_large} = Context.compact(messages, context_budget: 100)
     end
+
+    test "drop_oldest preserves newest messages, not oldest" do
+      messages = [
+        user("first message " <> String.duplicate("a", 200)),
+        user("second message " <> String.duplicate("b", 200)),
+        user("third message " <> String.duplicate("c", 200)),
+        user("fourth message " <> String.duplicate("d", 200)),
+        user("latest message " <> String.duplicate("e", 200))
+      ]
+
+      {:ok, compacted} = Context.compact(messages, context_budget: 120, keep_recent: 10)
+
+      contents = Enum.map(compacted, & &1["content"]) |> Enum.join(" ")
+      assert contents =~ "latest message"
+      refute contents =~ "first message"
+    end
   end
 
   describe "калібрування оцінки" do

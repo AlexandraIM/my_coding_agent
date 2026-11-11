@@ -19,7 +19,12 @@ defmodule Ella.ProjectRulesTreeTest do
     File.write!(Path.join(root, "mix.exs"), "defmodule Mix.Project do end")
     File.write!(Path.join(root, "README.md"), "# Project")
     File.write!(Path.join(Path.join(root, "lib"), "app.ex"), "defmodule App do end")
-    File.write!(Path.join(Path.join(Path.join(root, "lib"), "web"), "router.ex"), "defmodule Router do end")
+
+    File.write!(
+      Path.join(Path.join(Path.join(root, "lib"), "web"), "router.ex"),
+      "defmodule Router do end"
+    )
+
     File.write!(Path.join(Path.join(root, "test"), "test_helper.exs"), "ExUnit.start()")
 
     on_exit(fn -> File.rm_rf(root) end)
@@ -41,7 +46,8 @@ defmodule Ella.ProjectRulesTreeTest do
     tree = ProjectRules.project_tree(root, 1)
 
     assert tree =~ "lib/"
-    refute tree =~ "  web/"  # depth 2 would show this
+    # depth 2 would show this
+    refute tree =~ "  web/"
   end
 
   test "project_tree ignores ignored dirs", %{root: root} do

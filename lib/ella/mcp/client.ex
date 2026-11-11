@@ -33,6 +33,7 @@ defmodule Ella.Mcp.Client do
           :binary,
           :stream,
           :line,
+          :exit_status,
           args: args
         ])
       rescue
@@ -150,8 +151,37 @@ defmodule Ella.Mcp.Client do
   end
 
   @impl true
+  def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
+    reply_all_pending(state.pending_requests, {:error, "MCP server exited with status #{status}"})
+    {:noreply, %{state | pending_requests: %{}}}
+  end
+
+  @impl true
+  def handle_info({port, :closed}, %{port: port} = state) do
+    reply_all_pending(state.pending_requests, {:error, "MCP server closed connection"})
+    {:noreply, %{state | pending_requests: %{}}}
+  end
+
+  @impl true
+  def handle_info({:EXIT, port, reason}, %{port: port} = state) do
+    reply_all_pending(
+      state.pending_requests,
+      {:error, "MCP server process died: #{inspect(reason)}"}
+    )
+
+    {:noreply, %{state | pending_requests: %{}}}
+  end
+
+  @impl true
   def handle_info(_msg, state) do
     {:noreply, state}
+  end
+
+  defp reply_all_pending(pending_requests, reason) do
+    Enum.each(pending_requests, fn
+      {_id, :initialize} -> :ok
+      {_id, from} -> GenServer.reply(from, reason)
+    end)
   end
 
   defp send_json(port, map) do

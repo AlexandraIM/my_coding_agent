@@ -68,12 +68,15 @@ defmodule Ella.Tui do
   def event_to_msg(%Event.Text{text: text}, %{approval: %{}} = _state) when text in ["n", "N"] do
     {:msg, :approve_no}
   end
-  def event_to_msg(%Event.Key{key: key}, %{diff: diff} = _state) when diff != nil and key in ["d", "D", :escape] do
+
+  def event_to_msg(%Event.Key{key: key}, %{diff: diff} = _state)
+      when diff != nil and key in ["d", "D", :escape] do
     {:msg, :dismiss_diff}
   end
 
   def event_to_msg(%Event.Key{key: :enter}, state), do: {:msg, {:submit, state.input}}
   def event_to_msg(%Event.Key{key: :backspace}, _state), do: {:msg, :backspace}
+
   def event_to_msg(%Event.Key{key: key, modifiers: mods}, _state) do
     ctrl = :ctrl in mods
 
@@ -86,6 +89,7 @@ defmodule Ella.Tui do
       true -> :ignore
     end
   end
+
   def event_to_msg(%Event.Text{text: text}, _state), do: {:msg, {:text, text}}
   def event_to_msg(%Event.Resize{width: w, height: h}, _state), do: {:msg, {:resize, w, h}}
   def event_to_msg(_event, _state), do: :ignore
@@ -93,13 +97,21 @@ defmodule Ella.Tui do
   @impl true
   def update(:backspace, state) do
     new_input = String.slice(state.input, 0, String.length(state.input) - 1)
-    palette = String.starts_with?(new_input, "/") and not String.contains?(new_input, " ") and new_input != ""
+
+    palette =
+      String.starts_with?(new_input, "/") and not String.contains?(new_input, " ") and
+        new_input != ""
+
     %{state | input: new_input, palette: palette}
   end
 
   def update({:text, text}, state) do
     new_input = state.input <> text
-    palette = state.palette or (String.starts_with?(new_input, "/") and not String.contains?(new_input, " "))
+
+    palette =
+      state.palette or
+        (String.starts_with?(new_input, "/") and not String.contains?(new_input, " "))
+
     %{state | input: new_input, palette: palette}
   end
 
@@ -116,16 +128,27 @@ defmodule Ella.Tui do
   end
 
   def update({:submit, nil}, state), do: state
+
   def update({:submit, text}, %{palette: true} = state) do
     if String.contains?(text, " ") do
       # Full command with args typed directly (e.g. "/provider ollama")
       state = %{state | palette: false, input: ""}
       handle_slash(String.trim(text), state)
     else
-      commands = ["/plan", "/build", "/review", "/provider", "/usage", "/context", "/help", "/exit"]
+      commands = [
+        "/plan",
+        "/build",
+        "/review",
+        "/provider",
+        "/usage",
+        "/context",
+        "/help",
+        "/exit"
+      ]
+
       filter = String.downcase(text)
       matches = Enum.filter(commands, fn c -> String.contains?(String.downcase(c), filter) end)
-      selected = List.first(matches) || List.first(commands)
+      selected = List.first(matches) || String.trim(text)
       state = %{state | palette: false, input: ""}
       handle_slash(selected, state)
     end
@@ -258,7 +281,7 @@ defmodule Ella.Tui do
     {width, height} = state.dimensions
     sidebar_width = if state.sidebar, do: 28, else: 0
     body_height = max(1, height - 3)
-    right_width = max(1, width - sidebar_width - (if state.sidebar, do: 1, else: 0))
+    right_width = max(1, width - sidebar_width - if(state.sidebar, do: 1, else: 0))
 
     visible =
       state.output
@@ -272,7 +295,9 @@ defmodule Ella.Tui do
     status_style = Style.new(fg: :cyan, attrs: [:bold])
     busy_tag = if state.busy, do: " [busy]", else: ""
     palette_hint = if state.palette, do: " [palette]", else: ""
-    status = " #{mode_label(state.mode)} | #{state.provider}:#{state.model}#{busy_tag}#{palette_hint} (Ctrl+P palette, Ctrl+B sidebar)"
+
+    status =
+      " #{mode_label(state.mode)} | #{state.provider}:#{state.model}#{busy_tag}#{palette_hint} (Ctrl+P palette, Ctrl+B sidebar)"
 
     input_line = "> " <> state.input
 
@@ -280,7 +305,11 @@ defmodule Ella.Tui do
     all_rows =
       if state.sidebar do
         Enum.map(Enum.with_index(rows), fn {r, i} ->
-          left = Enum.at(state.tree_lines, i, "") |> String.slice(0, sidebar_width) |> String.pad_trailing(sidebar_width)
+          left =
+            Enum.at(state.tree_lines, i, "")
+            |> String.slice(0, sidebar_width)
+            |> String.pad_trailing(sidebar_width)
+
           "#{left}│#{String.slice(r, 0, right_width) |> String.pad_trailing(right_width)}"
         end)
       else
@@ -294,7 +323,17 @@ defmodule Ella.Tui do
     # Overlay palette if open
     base_frame =
       if state.palette do
-        commands = ["/plan", "/build", "/review", "/provider", "/usage", "/context", "/help", "/exit"]
+        commands = [
+          "/plan",
+          "/build",
+          "/review",
+          "/provider",
+          "/usage",
+          "/context",
+          "/help",
+          "/exit"
+        ]
+
         filter = String.downcase(state.input)
         matches = Enum.filter(commands, fn c -> String.contains?(String.downcase(c), filter) end)
         matches = if matches == [], do: commands, else: matches
@@ -313,7 +352,9 @@ defmodule Ella.Tui do
 
     # Overlay diff if present
     case state.diff do
-      nil -> base_frame
+      nil ->
+        base_frame
+
       widget_state ->
         diff_frame = TermUI.Widget.DiffViewer.view(widget_state, {width, height})
         Frame.overlay(base_frame, diff_frame, 1, 1)
@@ -337,7 +378,9 @@ defmodule Ella.Tui do
   defp append_chunk(state, text) do
     new_output =
       case state.output do
-        [] -> [text]
+        [] ->
+          [text]
+
         lines ->
           last = List.last(lines)
           List.replace_at(lines, length(lines) - 1, last <> text)
@@ -412,6 +455,7 @@ defmodule Ella.Tui do
         case Ella.Agent.set_provider(state.agent, name) do
           {:ok, ^name} ->
             info = safe_provider_info(state.agent)
+
             %{state | provider: info.provider, model: info.model || "unknown"}
             |> append("Switched to provider '#{name}' (model: #{info.model}).")
 
@@ -430,7 +474,10 @@ defmodule Ella.Tui do
         end
 
       _ ->
-        append(state, "Usage: /provider | /provider list | /provider <name> | /provider model <provider> <model>")
+        append(
+          state,
+          "Usage: /provider | /provider list | /provider <name> | /provider model <provider> <model>"
+        )
     end
   end
 
@@ -459,7 +506,10 @@ defmodule Ella.Tui do
         show_known_models(provider, state)
 
       {:ok, models} when is_list(models) ->
-        lines = ["#{length(models)} model(s) from #{provider} API:"] ++ Enum.map(models, fn m -> "  #{m["id"]}" end)
+        lines =
+          ["#{length(models)} model(s) from #{provider} API:"] ++
+            Enum.map(models, fn m -> "  #{m["id"]}" end)
+
         Enum.reduce(lines, state, fn line, acc -> append(acc, line) end)
 
       {:error, reason} ->
@@ -472,13 +522,18 @@ defmodule Ella.Tui do
 
   defp show_known_models(provider, state) do
     models = Ella.Llm.Provider.default_models(provider)
+
     if Enum.empty?(models) do
       append(state, "No known models for #{provider}.")
     else
-      lines = ["Known models for #{provider}:"] ++ Enum.map(models, fn m -> "  #{m["id"]} — #{m["description"]}" end)
+      lines =
+        ["Known models for #{provider}:"] ++
+          Enum.map(models, fn m -> "  #{m["id"]} — #{m["description"]}" end)
+
       Enum.reduce(lines, state, fn line, acc -> append(acc, line) end)
     end
   end
+
   defp safe_provider_info(pid) do
     Ella.Agent.provider_info(pid)
   rescue

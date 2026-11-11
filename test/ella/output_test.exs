@@ -76,4 +76,3 @@ defmodule Ella.OutputTest do
     end
   end
 end
-PYEOF

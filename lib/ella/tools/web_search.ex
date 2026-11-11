@@ -2,10 +2,25 @@ defmodule Ella.Tools.WebSearch do
   @moduledoc """
   Web search tool for browsing the internet.
 
-  Default provider: DuckDuckGo HTML (free, no API key required).
+  This module implements a lightweight web‑search tool using DuckDuckGo's
+  free HTML endpoint. The implementation avoids heavy HTML parsing libraries
+  by performing simple string extraction, tolerating missing tags and other
+  formatting quirks.
 
-  TODO: Add Brave Search / Serper.dev / Tavily support as optional providers
-  behind WEB_SEARCH_PROVIDER env var and API key config.
+  **Key features**
+  * Uses `Req.get/2` with a configurable receive timeout.
+  * Normalises the `limit` argument, enforcing a default of 5 and a hard cap
+    of 10 results.
+  * Provides `search_url/0` and `url_encode/1` helpers that respect the
+    `:web_search_url` application config, allowing callers to override the
+    provider.
+  * Safely strips any stray HTML tags from extracted snippets via `strip_tags/1`.
+  * Returns detailed error tuples for network failures, non‑200 responses, or
+    parsing problems.
+
+  Future work may add additional providers (Brave, Serper.dev, Tavily) that
+  can be selected through the `WEB_SEARCH_PROVIDER` environment variable and
+  corresponding API‑key configuration.
   """
 
   @behaviour Ella.Tool
@@ -68,13 +83,13 @@ defmodule Ella.Tools.WebSearch do
   end
 
   defp search_duckduckgo(query, limit) do
-    url = @duckduckgo_url <> "?q=" <> url_encode(query)
+    url = search_url() <> "?q=" <> url_encode(query)
 
-    case Req.get(url, timeout: 15_000) do
-      %Req.Response{status: 200, body: body} ->
+    case Req.get(url, receive_timeout: 15_000) do
+      {:ok, %Req.Response{status: 200, body: body}} ->
         {:ok, parse_duckduckgo(body, limit)}
 
-      %Req.Response{status: status} ->
+      {:ok, %Req.Response{status: status}} ->
         {:error, "Web search returned status #{status}"}
 
       {:error, reason} ->
@@ -108,23 +123,42 @@ defmodule Ella.Tools.WebSearch do
   end
 
   defp extract_between(chunk, start_pat, end_pat) do
-    chunk
-    |> String.split(start_pat)
-    |> Enum.drop(1)
-    |> hd()
-    |> String.split(end_pat)
-    |> hd()
-    |> String.trim()
+    case String.split(chunk, start_pat) do
+      [_, rest | _] ->
+        case String.split(rest, end_pat) do
+          [inner | _] ->
+            text =
+              case String.split(inner, ">", parts: 2) do
+                [_, after_bracket] -> after_bracket
+                [plain] -> plain
+              end
+
+            text |> strip_tags() |> String.trim()
+
+          _ ->
+            ""
+        end
+
+      _ ->
+        ""
+    end
+  end
+
+  defp strip_tags(text) do
+    String.replace(text, ~r/<[^>]+>/, "")
   end
 
   defp extract_url(chunk) do
-    chunk
-    |> String.split("href=\"")
-    |> Enum.drop(1)
-    |> hd()
-    |> String.split("\"")
-    |> hd()
-    |> String.trim()
+    case String.split(chunk, "href=\"") do
+      [_, rest | _] ->
+        case String.split(rest, "\"") do
+          [url | _] -> String.trim(url)
+          _ -> ""
+        end
+
+      _ ->
+        ""
+    end
   end
 
   # --- Formatting ---
@@ -152,6 +186,10 @@ defmodule Ella.Tools.WebSearch do
 
   defp url_encode(text) do
     URI.encode(text, &(&1 in ?a..?z or &1 in ?A..?Z or &1 in ?0..?9 or &1 in ~w(- _ . ~)))
+  end
+
+  defp search_url do
+    Application.get_env(:ella, :web_search_url, @duckduckgo_url)
   end
 
   defp normalize_limit(nil), do: @default_limit

@@ -135,7 +135,9 @@ defmodule Ella.Tools.ApplyPatch do
       {:ok, updated} ->
         Ella.Output.diff(path, content, updated)
         write_patch(path, updated)
-      :error -> {:error, "Could not find one of the search blocks in #{path}. Verify formatting."}
+
+      :error ->
+        {:error, "Could not find one of the search blocks in #{path}. Verify formatting."}
     end
   end
 

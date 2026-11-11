@@ -198,7 +198,11 @@ defmodule Ella do
     provider_key = info.provider
 
     provider_meta = Ella.Llm.Provider.provider_info(provider_key)
-    display_name = if provider_meta, do: Map.get(provider_meta, :display_name, provider_key), else: provider_key
+
+    display_name =
+      if provider_meta,
+        do: Map.get(provider_meta, :display_name, provider_key),
+        else: provider_key
 
     Ella.Output.puts(Ella.Output.tag("Current provider:", :cyan))
     Ella.Output.puts("  provider:     #{provider_key}")
@@ -241,6 +245,7 @@ defmodule Ella do
 
     Enum.each(Ella.Llm.Provider.providers(), fn p ->
       Ella.Output.puts("\n#{p.display_name} (##{p.name}):")
+
       Enum.each(p.models, fn m ->
         Ella.Output.puts("  #{m["id"]} — #{m["description"]}")
       end)
@@ -273,13 +278,18 @@ defmodule Ella do
     _ -> Ella.Output.puts("Provider test is not available.")
   end
 
-  defp print_provider(pid, ["model", provider, model]) when is_binary(provider) and is_binary(model) do
+  defp print_provider(pid, ["model", provider, model])
+       when is_binary(provider) and is_binary(model) do
     # Validate model exists for provider
     case Ella.Llm.Provider.valid_model?(provider, model) do
       false ->
         valid_models = Ella.Llm.Provider.default_models(provider)
         model_names = Enum.map(valid_models, & &1["id"])
-        Ella.Output.puts(Ella.Output.tag("Model '#{model}' is not valid for provider '#{provider}'.", :yellow))
+
+        Ella.Output.puts(
+          Ella.Output.tag("Model '#{model}' is not valid for provider '#{provider}'.", :yellow)
+        )
+
         Ella.Output.puts("Valid models: #{Enum.join(model_names, ", ")}")
 
       true ->
@@ -319,7 +329,10 @@ defmodule Ella do
 
     case Ella.LlmClient.fetch_models_from_api(provider) do
       {:ok, []} ->
-        Ella.Output.puts(Ella.Output.tag("No models returned from API. Showing known defaults.", :yellow))
+        Ella.Output.puts(
+          Ella.Output.tag("No models returned from API. Showing known defaults.", :yellow)
+        )
+
         show_known_models(provider)
 
       {:ok, models} when is_list(models) ->
@@ -330,7 +343,10 @@ defmodule Ella do
         end)
 
       {:error, reason} ->
-        Ella.Output.puts(Ella.Output.tag("Failed to fetch models: #{reason}. Showing known defaults.", :yellow))
+        Ella.Output.puts(
+          Ella.Output.tag("Failed to fetch models: #{reason}. Showing known defaults.", :yellow)
+        )
+
         show_known_models(provider)
     end
   rescue
@@ -340,7 +356,9 @@ defmodule Ella do
   defp show_known_models(provider) when is_binary(provider) do
     models = Ella.Llm.Provider.default_models(provider)
     provider_info = Ella.Llm.Provider.provider_info(provider)
-    display_name = if provider_info, do: Map.get(provider_info, :display_name, provider), else: provider
+
+    display_name =
+      if provider_info, do: Map.get(provider_info, :display_name, provider), else: provider
 
     Ella.Output.puts(Ella.Output.tag("Known models for #{display_name} (#{provider}):", :cyan))
 
@@ -354,7 +372,6 @@ defmodule Ella do
   rescue
     _ -> Ella.Output.puts("Models are not available.")
   end
-
 
   defp print_help do
     Ella.Output.puts(Ella.Output.tag("Available commands:", :cyan))
@@ -475,8 +492,12 @@ defmodule Ella do
     provider_key = String.downcase(provider)
 
     case provider_key do
-      "ollama" -> true
-      "opencode" -> true
+      "ollama" ->
+        true
+
+      "opencode" ->
+        true
+
       _ ->
         key_env = Ella.Llm.Provider.api_key_env(provider)
         present?(System.get_env(key_env))
@@ -647,10 +668,14 @@ defmodule Ella do
           [exec | args] ->
             case Ella.Agent.register_mcp(pid, exec, args) do
               {:ok, count} ->
-                Ella.Output.puts(Ella.Output.tag("Зареєстровано #{count} MCP tool(s) з #{exec}.", :green))
+                Ella.Output.puts(
+                  Ella.Output.tag("Зареєстровано #{count} MCP tool(s) з #{exec}.", :green)
+                )
 
               {:error, reason} ->
-                Ella.Output.puts(Ella.Output.tag("MCP registration failed: #{inspect(reason)}", :red))
+                Ella.Output.puts(
+                  Ella.Output.tag("MCP registration failed: #{inspect(reason)}", :red)
+                )
             end
 
           _ ->

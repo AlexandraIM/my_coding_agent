@@ -11,6 +11,7 @@ defmodule Ella.TuiTest do
 
   test "renders an initial frame" do
     {:ok, agent} = Ella.Agent.start_link([])
+
     {:ok, runtime} =
       TermUI.start_link(Ella.Tui,
         agent: agent,
@@ -25,6 +26,7 @@ defmodule Ella.TuiTest do
 
   test "typing and submit updates output" do
     {:ok, agent} = Ella.Agent.start_link([])
+
     {:ok, runtime} =
       TermUI.start_link(Ella.Tui,
         agent: agent,
@@ -45,4 +47,3 @@ defmodule Ella.TuiTest do
     assert_receive {:backend, :shutdown, _}, 1000
   end
 end
-PYEOF

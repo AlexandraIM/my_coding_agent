@@ -99,7 +99,11 @@ defmodule Ella.LlmClient do
       {:ok, message, usage} ->
         if verbose do
           Ella.Output.puts(Ella.Output.tag("--- [LLM RESPONSE SUCCESS] ---", :green))
-          Ella.Output.puts([Ella.Output.tag("Tokens: ", :cyan), Usage.format(usage || Usage.empty())])
+
+          Ella.Output.puts([
+            Ella.Output.tag("Tokens: ", :cyan),
+            Usage.format(usage || Usage.empty())
+          ])
         end
 
         {:ok, message, usage || estimated_usage(messages)}
@@ -123,7 +127,9 @@ defmodule Ella.LlmClient do
             on_retry.(n, error, delay)
 
             if verbose do
-              Ella.Output.puts(Ella.Output.tag("Retry #{n}/#{max_attempts} in #{delay}ms", :yellow))
+              Ella.Output.puts(
+                Ella.Output.tag("Retry #{n}/#{max_attempts} in #{delay}ms", :yellow)
+              )
             end
 
             sleep_fn.(delay)
@@ -321,13 +327,20 @@ defmodule Ella.LlmClient do
     provider = provider_from_adapter(adapter)
 
     case provider do
-      "ollama" -> :ok  # local, no key needed
-      "opencode" -> :ok  # often local, default key provided
+      # local, no key needed
+      "ollama" ->
+        :ok
+
+      # often local, default key provided
+      "opencode" ->
+        :ok
 
       _ ->
         api_key = Keyword.get(config, :api_key)
+
         if api_key == nil or api_key == "" do
-          {:error, "API key not set for #{provider}. Set #{Provider.api_key_env(provider)} or configure via /provider."}
+          {:error,
+           "API key not set for #{provider}. Set #{Provider.api_key_env(provider)} or configure via /provider."}
         else
           :ok
         end
@@ -411,9 +424,13 @@ defmodule Ella.LlmClient do
       |> Req.get(url: "/models")
 
     case request do
-      {:ok, %Req.Response{status: 200, body: %{
-                      "data" => model_list
-                    }}} ->
+      {:ok,
+       %Req.Response{
+         status: 200,
+         body: %{
+           "data" => model_list
+         }
+       }} ->
         # Transform API response to standard format
         models =
           Enum.map(model_list, fn m ->

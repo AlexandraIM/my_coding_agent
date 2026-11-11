@@ -507,9 +507,19 @@ defmodule Ella.Agent do
   def active_skill(pid), do: GenServer.call(pid, :active_skill)
 
   defp set_system_message(state, prompt) do
-    filtered_messages = Enum.reject(state.messages, fn m -> m["role"] == "system" end)
+    filtered_messages =
+      Enum.reject(state.messages, fn m ->
+        m["role"] == "system" and not summary_message?(m)
+      end)
+
     %{state | messages: [%{"role" => "system", "content" => prompt} | filtered_messages]}
   end
+
+  defp summary_message?(%{"content" => content}) when is_binary(content) do
+    String.starts_with?(content, "Summary of earlier conversation")
+  end
+
+  defp summary_message?(_), do: false
 
   # --- Agentic Loop ---
 
@@ -618,10 +628,6 @@ defmodule Ella.Agent do
        ) do
     llm_opts = streaming_opts(state)
 
-    if match?({:tui, _}, Ella.Output.sink()) or System.get_env("ELLA_STREAM") == "1" do
-      Ella.Output.write("Agent: ")
-    end
-
     case LlmClient.chat_completion(context_messages, active_tools, llm_opts) do
       {:ok, %{"tool_calls" => tool_calls} = message, usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
@@ -685,7 +691,10 @@ defmodule Ella.Agent do
         {:ok, original_messages ++ [message], message["content"] || "Done.", state.usage}
 
       {:error, reason} ->
-        Ella.Output.puts(Ella.Output.tag("Error calling LLM: #{Ella.Llm.Error.message(reason)}", :red))
+        Ella.Output.puts(
+          Ella.Output.tag("Error calling LLM: #{Ella.Llm.Error.message(reason)}", :red)
+        )
+
         {:error, reason, state.usage}
     end
   end
@@ -716,7 +725,9 @@ defmodule Ella.Agent do
   defp streaming_opts(state) do
     on_text =
       case Ella.Output.sink() do
-        {:tui, _} -> fn fragment -> Ella.Output.write(fragment) end
+        {:tui, _} ->
+          fn fragment -> Ella.Output.write(fragment) end
+
         _ ->
           if System.get_env("ELLA_STREAM") == "1" do
             fn fragment -> Ella.Output.write(fragment) end
@@ -727,7 +738,6 @@ defmodule Ella.Agent do
 
     Keyword.put(state.llm_opts, :on_text, on_text)
   end
-
 
   defp build_tool_map(tools) do
     Enum.into(tools, %{}, fn

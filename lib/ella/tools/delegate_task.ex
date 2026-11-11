@@ -19,7 +19,7 @@ defmodule Ella.Tools.DelegateTask do
 
   def execute(%{"task" => task}) do
     task_preview = String.slice(task, 0, 120) <> if String.length(task) > 120, do: "...", else: ""
-    Owl.IO.puts(Owl.Data.tag("▶ Delegating sub-task: #{task_preview}", :magenta))
+    Ella.Output.puts(Ella.Output.tag("▶ Delegating sub-task: #{task_preview}", :magenta))
 
     case Ella.SubAgent.run_task(task, tools_for_mode(), llm_opts()) do
       {:ok, summary, usage} ->
@@ -49,6 +49,7 @@ defmodule Ella.Tools.DelegateTask do
     completion = u.completion_tokens || 0
     total = prompt + completion
     cost = if u.cost, do: " $#{:erlang.float_to_binary(u.cost, decimals: 4)}", else: ""
+
     if total > 0 do
       "\n  [usage: #{prompt} in / #{completion} out = #{total} tokens#{cost}]"
     else

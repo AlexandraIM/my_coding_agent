@@ -135,7 +135,9 @@ defmodule Ella.Tools.SystemExec do
               {:error, _} = error -> error
               :ok -> check_interpreter_bypass(command, segments)
             end
-          {:error, _} = error -> error
+
+          {:error, _} = error ->
+            error
         end
     end
   end
@@ -144,13 +146,18 @@ defmodule Ella.Tools.SystemExec do
     case Process.get(:ella_agent_mode) do
       :review ->
         # Блокуємо редірекцію, створення файлів, перезапис, видалення.
-        if String.match?(command, ~r/[<>]|>>|>\s|tee\s|cp\s|mv\s|rm\s|chmod\s|chown\s|dd\s|mkfs\s|git\s+(push|reset|clean|filter-branch|commit|checkout|merge|rebase|apply|stash|add|rm)\b/) do
-          {:error, "Mutating command blocked in REVIEW mode. Use read-only commands only (git diff, tests, linters)."}
+        if String.match?(
+             command,
+             ~r/[<>]|>>|>\s|tee\s|cp\s|mv\s|rm\s|chmod\s|chown\s|dd\s|mkfs\s|git\s+(push|reset|clean|filter-branch|commit|checkout|merge|rebase|apply|stash|add|rm)\b/
+           ) do
+          {:error,
+           "Mutating command blocked in REVIEW mode. Use read-only commands only (git diff, tests, linters)."}
         else
           :ok
         end
 
-      _ -> :ok
+      _ ->
+        :ok
     end
   end
 

@@ -170,6 +170,33 @@ defmodule Ella.AgentTest do
       GenServer.stop(pid)
     end
 
+    test "set_mode preserves compacted conversation summary messages" do
+      {:ok, pid} = Agent.start_link()
+
+      summary = %{
+        "role" => "system",
+        "content" =>
+          "Summary of earlier conversation (older messages were compacted):\nUser asked to fix tests"
+      }
+
+      user_msg = %{"role" => "user", "content" => "now run checks"}
+
+      :sys.replace_state(pid, fn state ->
+        %{state | messages: state.messages ++ [summary, user_msg]}
+      end)
+
+      Agent.set_mode(pid, :build)
+
+      messages = :sys.get_state(pid).messages
+
+      assert Enum.any?(messages, fn m ->
+               m["role"] == "system" and
+                 String.contains?(m["content"], "Summary of earlier conversation")
+             end)
+
+      GenServer.stop(pid)
+    end
+
     test "reload_skills скидає активну навичку" do
       {:ok, pid} = Agent.start_link()
       GenServer.call(pid, {:activate_skill, "Testing"})

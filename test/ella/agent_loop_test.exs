@@ -261,6 +261,29 @@ defmodule Ella.AgentLoopTest do
       GenServer.stop(pid)
     end
 
+    test "tool call does not emit premature Agent: header in tui sink mode" do
+      Ella.Output.set_sink({:tui, self()})
+      on_exit(fn -> Ella.Output.reset_sink() end)
+
+      pid = start_agent()
+
+      script = [
+        tool_step("c1", "echo", %{"text" => "hello"}),
+        text_step("done")
+      ]
+
+      assert {:ok, "done"} = ask_with_script(pid, "test", script)
+
+      messages = collect_tui_messages([])
+      first_agent_chunk_idx = Enum.find_index(messages, &(&1 == "Agent: "))
+      first_tool_idx = Enum.find_index(messages, &(&1 == "tool_call_echo"))
+
+      assert first_tool_idx != nil
+      assert first_agent_chunk_idx == nil or first_agent_chunk_idx > first_tool_idx
+
+      GenServer.stop(pid)
+    end
+
     test "цикл продовжується, поки LLM не поверне фінальний текст" do
       pid = start_agent(max_iterations: 10)
 
@@ -404,6 +427,17 @@ defmodule Ella.AgentLoopTest do
       assert tool_message["content"] =~ "ERROR"
 
       GenServer.stop(pid)
+    end
+  end
+
+  defp collect_tui_messages(acc) do
+    receive do
+      {:output_chunk, text} -> collect_tui_messages([text | acc])
+      {:output, text} -> collect_tui_messages([text | acc])
+      {:tool_call, name, _args} -> collect_tui_messages(["tool_call_#{name}" | acc])
+      _ -> collect_tui_messages(acc)
+    after
+      50 -> Enum.reverse(acc)
     end
   end
 end

@@ -58,7 +58,7 @@ defmodule Ella.Skills do
     global_dir = global_dir()
     project_dir = Path.join(Sandbox.root(), ".ella/skills")
 
-    global = load_dir(global_dir, :global)
+    global = load_global(global_dir)
     project = load_dir(project_dir, :project)
 
     # Порядок сохраняється: проєктні йдуть першими, глобальні доповнюють.
@@ -66,19 +66,34 @@ defmodule Ella.Skills do
     |> Enum.uniq_by(&normalise_name(&1.name))
   end
 
-  defp maybe_seed_defaults do
-    # Opt-in via config; default false to avoid silent home-dir writes.
-    unless Application.get_env(:ella, :seed_default_skills, false), do: :ok
+  defp load_global(dir) do
+    skills_sub = Path.join(dir, "skills")
 
-    # Run only once per VM (migration-style).
-    unless Application.get_env(:ella, :default_skills_seeded, false) do
+    skills_in_sub =
+      if File.dir?(skills_sub) do
+        load_dir(skills_sub, :global)
+      else
+        []
+      end
+
+    skills_in_root = load_dir(dir, :global)
+
+    (skills_in_sub ++ skills_in_root)
+    |> Enum.uniq_by(&normalise_name(&1.name))
+  end
+
+  defp maybe_seed_defaults do
+    if Application.get_env(:ella, :seed_default_skills, false) and
+         not Application.get_env(:ella, :default_skills_seeded, false) do
       try do
         seed_defaults()
         Application.put_env(:ella, :default_skills_seeded, true)
         Ella.Output.puts(Ella.Output.tag("Seeded default skills to ~/.ella/skills/", :magenta))
       rescue
         e ->
-          Ella.Output.puts(Ella.Output.tag("Failed to seed default skills: #{Exception.message(e)}", :yellow))
+          Ella.Output.puts(
+            Ella.Output.tag("Failed to seed default skills: #{Exception.message(e)}", :yellow)
+          )
       end
     end
   end

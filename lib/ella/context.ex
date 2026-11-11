@@ -179,7 +179,7 @@ defmodule Ella.Context do
       else
         # Підсумок зберігаємо в будь-якому разі: без нього агент
         # втратить інформацію про те, що вже робив.
-        shrink_to_fit(system, [summary | recent], budget, opts)
+        shrink_to_fit(system ++ [summary], recent, budget, opts)
       end
     end
   end
@@ -223,7 +223,8 @@ defmodule Ella.Context do
     # keep ∈ 1..total: скільки найсвіжіших повідомлень лишаємо.
     # Нуль не допускаємо: порожня історія гірша за явну помилку.
     Enum.reduce_while((total - 1)..1//-1, nil, fn keep, _acc ->
-      candidate = system ++ Enum.take(trimmed, keep)
+      recent = Enum.take(trimmed, -keep)
+      candidate = system ++ recent
 
       if estimate(candidate, opts) <= budget do
         {:halt, {:ok, candidate}}

@@ -298,6 +298,20 @@ defmodule Ella.SkillsTest do
       assert [%Skills{name: "code style"}] = Skills.load_all()
     end
 
+    test "читає глобальні навички з піддиректорії skills" do
+      global_parent = Application.get_env(:ella, :global_skills_dir)
+      sub_dir = Path.join(global_parent, "skills")
+      File.mkdir_p!(sub_dir)
+
+      File.write!(
+        Path.join(sub_dir, "global_sub.md"),
+        "---\ndescription: Global in sub\n---\nGlobal instructions"
+      )
+
+      skills = Skills.load_all()
+      assert Enum.any?(skills, fn s -> s.name == "global sub" and s.scope == :global end)
+    end
+
     test "порожня директорія дає порожній список", %{skills_dir: skills_dir} do
       # Ensure both project and global skills dirs are empty
       assert File.ls(skills_dir) == {:ok, []}

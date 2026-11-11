@@ -11,6 +11,7 @@ defmodule Ella.TuiPaletteTest do
 
   test "typing / opens command palette in rendered frame" do
     {:ok, agent} = Ella.Agent.start_link([])
+
     {:ok, runtime} =
       TermUI.start_link(Ella.Tui,
         agent: agent,
@@ -24,9 +25,24 @@ defmodule Ella.TuiPaletteTest do
 
     # The rendered frame should contain palette text
     rendered = frame_to_text(frame)
+    assert rendered =~ "Command Palette"
 
     DeterministicBackend.send_event(runtime, TermUI.Event.key("c", modifiers: [:ctrl]))
     assert_receive {:backend, :shutdown, _}, 1000
+  end
+
+  test "submitting unknown command in palette does not fall back to /plan" do
+    state = %{
+      agent: nil,
+      mode: :build,
+      palette: true,
+      input: "/unknown",
+      output: []
+    }
+
+    new_state = Ella.Tui.update({:submit, "/unknown"}, state)
+    assert new_state.mode == :build
+    assert Enum.any?(new_state.output, &(&1 =~ "Unknown command: /unknown"))
   end
 
   defp frame_to_text(frame) do
@@ -38,8 +54,8 @@ defmodule Ella.TuiPaletteTest do
             _ -> " "
           end
         end
+
       row <> "\n"
     end
   end
 end
-PYEOF
