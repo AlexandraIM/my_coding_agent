@@ -618,6 +618,10 @@ defmodule Ella.Agent do
        ) do
     llm_opts = streaming_opts(state)
 
+    if match?({:tui, _}, Ella.Output.sink()) or System.get_env("ELLA_STREAM") == "1" do
+      Ella.Output.write("Agent: ")
+    end
+
     case LlmClient.chat_completion(context_messages, active_tools, llm_opts) do
       {:ok, %{"tool_calls" => tool_calls} = message, usage}
       when is_list(tool_calls) and length(tool_calls) > 0 ->
@@ -636,11 +640,6 @@ defmodule Ella.Agent do
           Enum.reduce(tool_calls, {[], state}, fn call, {results, acc_state} ->
             tool_name = call["function"]["name"]
             call_id = call["id"]
-
-            Ella.Output.puts([
-              Ella.Output.tag("Tool Call [#{tool_name}]: ", :yellow),
-              compact_args(tool_name, call["function"]["arguments"])
-            ])
 
             {result_text, new_state} =
               execute_tool_call(call, tool_name, tool_map, acc_state)
@@ -695,53 +694,40 @@ defmodule Ella.Agent do
   # ("Wait", "Actually" тощо), це не слід показувати користувачу.
   # Показуємо лише фінальну відповідь після завершення потоку.
   defp finish_turn(content) do
-    Ella.Output.blank()
-    Ella.Output.puts([Ella.Output.tag("Agent: ", :blue), content])
-    Ella.Output.blank()
+    case Ella.Output.sink() do
+      {:tui, _} ->
+        Ella.Output.write("\n")
+        Ella.Output.blank()
+
+      _ ->
+        if System.get_env("ELLA_STREAM") == "1" do
+          Ella.Output.write("\n")
+          Ella.Output.blank()
+        else
+          Ella.Output.blank()
+          Ella.Output.puts([Ella.Output.tag("Agent: ", :blue), content])
+          Ella.Output.blank()
+        end
+    end
   end
 
   # Під час стріму фрагменти не друкуємо, щоб не витікав внутрішній
   # монотет моделі. Лише встановлюємо прапор стрімування для finish_turn.
   defp streaming_opts(state) do
-    Keyword.put(state.llm_opts, :on_text, fn _fragment ->
-      :ok
-    end)
+    on_text =
+      case Ella.Output.sink() do
+        {:tui, _} -> fn fragment -> Ella.Output.write(fragment) end
+        _ ->
+          if System.get_env("ELLA_STREAM") == "1" do
+            fn fragment -> Ella.Output.write(fragment) end
+          else
+            fn _fragment -> :ok end
+          end
+      end
+
+    Keyword.put(state.llm_opts, :on_text, on_text)
   end
 
-  # Компактне підсумок аргументів виклику інструмента, щоб не виводити
-  # увесь JSON у консоль.
-  defp compact_args(_tool_name, args) when is_binary(args) do
-    case Jason.decode(args) do
-      {:ok, %{"path" => path} = _} ->
-        "path=#{path}"
-
-      {:ok, %{"command" => command} = _} ->
-        "cmd=#{truncate(command)}"
-
-      {:ok, %{"pattern" => pattern} = _} ->
-        "pattern=#{truncate(pattern)}"
-
-      {:ok, %{"query" => query} = _} ->
-        "query=#{truncate(query)}"
-
-      {:ok, map} ->
-        keys = Map.keys(map) |> Enum.join(", ") |> truncate()
-        keys
-
-      :error ->
-        truncate(args)
-    end
-  end
-
-  defp compact_args(_tool_name, args), do: inspect(args) |> truncate()
-
-  defp truncate(text) when is_binary(text) do
-    if String.length(text) > 100 do
-      String.slice(text, 0, 100) <> "..."
-    else
-      text
-    end
-  end
 
   defp build_tool_map(tools) do
     Enum.into(tools, %{}, fn
@@ -772,7 +758,10 @@ defmodule Ella.Agent do
             state
           end
 
+        Ella.Output.tool_call(tool_name, tool_args)
+
         result = execute_tool(tool_name, tool_args, tool_map, state.mode)
+        Ella.Output.tool_result(tool_name, result)
         {result, new_state}
 
       {:error, reason} ->

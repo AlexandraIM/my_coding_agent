@@ -391,8 +391,11 @@ defmodule Ella.LlmClient do
 
   defp get_api_key(provider_key) do
     env_var = Provider.api_key_env(provider_key)
-    System.get_env(env_var)
+    System.get_env(env_var) || default_api_key(provider_key)
   end
+
+  defp default_api_key("ollama"), do: "ollama"
+  defp default_api_key(_), do: nil
 
   # OpenAI-compatible API (OpenAI, Poolside, Mistral, Ollama, OpenCode)
   defp do_fetch_models(base_url, api_key, _provider_key) do
@@ -419,6 +422,19 @@ defmodule Ella.LlmClient do
               "object" => Map.get(m, "object", "model"),
               "created" => Map.get(m, "created"),
               "owned_by" => Map.get(m, "owned_by")
+            }
+          end)
+
+        {:ok, models}
+
+      {:ok, %Req.Response{status: 200, body: %{"models" => model_list}}} ->
+        models =
+          Enum.map(model_list, fn m ->
+            %{
+              "id" => Map.get(m, "name") || Map.get(m, "model"),
+              "object" => "model",
+              "created" => nil,
+              "owned_by" => "ollama"
             }
           end)
 

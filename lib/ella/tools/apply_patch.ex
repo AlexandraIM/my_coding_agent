@@ -92,6 +92,7 @@ defmodule Ella.Tools.ApplyPatch do
       0 ->
         case fuzzy_replace(content, search, replace) do
           {:ok, updated} ->
+            Ella.Output.diff(path, content, updated)
             write_patch(path, updated)
 
           :error ->
@@ -100,6 +101,7 @@ defmodule Ella.Tools.ApplyPatch do
 
       1 ->
         updated = String.replace(content, search, replace, global: false)
+        Ella.Output.diff(path, content, updated)
         write_patch(path, updated)
 
       n when n > 1 ->
@@ -130,7 +132,9 @@ defmodule Ella.Tools.ApplyPatch do
 
   defp apply_blocks(path, content, blocks) do
     case apply_blocks_fold(content, blocks) do
-      {:ok, updated} -> write_patch(path, updated)
+      {:ok, updated} ->
+        Ella.Output.diff(path, content, updated)
+        write_patch(path, updated)
       :error -> {:error, "Could not find one of the search blocks in #{path}. Verify formatting."}
     end
   end

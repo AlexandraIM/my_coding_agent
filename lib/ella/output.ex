@@ -55,6 +55,64 @@ defmodule Ella.Output do
     end
   end
 
+  @doc "Emit a diff between before/after (TUI renders DiffViewer; stdio prints summary)."
+  def diff(path, before, after_text) do
+    case sink() do
+      {:tui, pid} ->
+        send(pid, {:diff, path, before, after_text})
+        :ok
+
+      _ ->
+        # In stdio mode, keep it minimal.
+        :ok
+    end
+  end
+
+  @doc "Emit a tool invocation (TUI renders as a block; stdio prints a line)."
+  def tool_call(name, args) do
+    case sink() do
+      {:tui, pid} ->
+        send(pid, {:tool_call, name, args})
+        :ok
+
+      _ ->
+        puts([tag("Tool Call [#{name}]: ", :yellow), inspect_args(args)])
+    end
+  end
+
+  @doc "Emit a tool result (TUI renders as a block; stdio is silent)."
+  def tool_result(name, result) do
+    case sink() do
+      {:tui, pid} ->
+        send(pid, {:tool_result, name, result})
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp inspect_args(args) when is_map(args) do
+    args
+    |> Enum.map(fn {k, v} -> "#{k}=#{inspect(v, limit: 3, printable_limit: 60)}" end)
+    |> Enum.join(", ")
+  end
+
+  defp inspect_args(other), do: inspect(other, limit: 3, printable_limit: 60)
+
+  @doc "Write text without a trailing newline (for streaming)."
+  def write(text) do
+    case sink() do
+      {:tui, pid} ->
+        send(pid, {:output_chunk, text})
+        :ok
+
+      _ ->
+        IO.write(text)
+        :ok
+    end
+  end
+
   @doc "Convert a message to plain text."
   def to_text(message) when is_binary(message), do: message
 
@@ -70,4 +128,3 @@ defmodule Ella.Output do
 
   def to_text(other), do: to_string(other)
 end
-PYEOF

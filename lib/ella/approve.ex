@@ -48,13 +48,28 @@ defmodule Ella.Approve do
   def ask(tool_name, path) do
     if interactive?() do
       if Config.require_approval?() do
-        prompt(tool_name, path)
+        case Ella.Output.sink() do
+          {:tui, _pid} -> tui_prompt(tool_name, path)
+          _ -> prompt(tool_name, path)
+        end
       else
         warn_permissive(tool_name, path)
         :yes
       end
     else
       :unavailable
+    end
+  end
+
+  defp tui_prompt(tool_name, path) do
+    {:tui, pid} = Ella.Output.sink()
+    send(pid, {:approval_request, tool_name, path, self()})
+
+    receive do
+      {:approval, :yes} -> :yes
+      {:approval, :no} -> :no
+    after
+      60_000 -> :no
     end
   end
 

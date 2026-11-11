@@ -414,8 +414,9 @@ ELLA_TUI=0 ella          # force classic REPL (default under `mix`)
 
 - Standalone binaries prefer the TUI by default; `mix run` keeps the classic REPL.
 - Layout: scrollable output pane, status bar (mode/provider/model/usage), input box.
-- Commands: `/plan`, `/build`, `/review`, `/provider`, `/usage`, `/context`, `/help`, `/exit`.
-- Disable the optional native TTY NIF for Burrito builds with `TERM_UI_TTY_NIF=disabled`.
+- Commands: `/plan`, `/build`, `/review`, `/provider`, `/provider list`, `/provider <name>`, `/provider model <p> <m>`, `/usage`, `/context`, `/help`, `/exit`.
+- Live streaming of agent responses, tool-call blocks, inline diffs (`apply_patch`), and inline approval prompts for protected files.
+- Disable the optional native TTY NIF for builds with `TERM_UI_TTY_NIF=disabled`.
 
 ## Typical Workflow
 
