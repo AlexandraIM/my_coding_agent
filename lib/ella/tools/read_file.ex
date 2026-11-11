@@ -1,10 +1,10 @@
 defmodule Ella.Tools.ReadFile do
   @moduledoc """
-  Читання файлу з можливістю взяти лише потрібний фрагмент.
+  Reading a file, optionally only a needed fragment.
 
-  Читати файл цілком — погана ідея для великих файлів: `mix.lock`,
-  згенеровані артефакти чи CSV можуть умістити десятки тисяч рядків
-  і вичерпати контекстне вікно за один виклик.
+  Reading a file in full is a bad idea for large files: `mix.lock`,
+  generated artifacts, or CSVs can contain tens of thousands of lines
+  and exhaust the context window in a single call.
   """
 
   @behaviour Ella.Tool

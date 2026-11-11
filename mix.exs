@@ -4,7 +4,7 @@ defmodule Ella.MixProject do
   def project do
     [
       app: :ella,
-      version: "0.3.0",
+      version: "0.3.1",
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       escript: escript(),
@@ -97,9 +97,12 @@ defmodule Ella.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:req, "~> 0.5"},
+      {:req, "~> 0.7"},
       {:term_ui, "~> 2.0.0-rc.1"},
       {:owl, "~> 0.11.0"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
+
       # Тільки для пакування: `mix release` збирає з неї
       # самодостатній бінарник, у самому застосунку вона не потрібна.
       {:burrito, "~> 1.6", runtime: false}

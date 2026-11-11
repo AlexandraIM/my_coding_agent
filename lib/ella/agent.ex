@@ -36,22 +36,22 @@ defmodule Ella.Agent do
   def provider_info(pid), do: GenServer.call(pid, :provider_info)
 
   @doc """
-  Реєстрація нового MCP-сервера в агента.
+  Registers a new MCP server with the agent.
 
-  На відміну від `ask/2` має таймаут: запуск зовнішнього процесу не
-  повинен зависати назавжди, якщо сервер мовчить у відповідь.
+  Unlike `ask/2`, it has a timeout: starting an external process must not
+  hang forever if the server stays silent.
   """
   def register_mcp(pid, executable, args, timeout \\ 60_000) do
     GenServer.call(pid, {:register_mcp, executable, args}, timeout)
   end
 
-  @doc "Повертає накопичений облік токенів і вартості за сесію."
+  @doc "Returns the accumulated token and cost accounting for the session."
   def usage(pid), do: GenServer.call(pid, :usage)
 
-  @doc "Скидає облік токенів."
+  @doc "Resets the token accounting."
   def reset_usage(pid), do: GenServer.call(pid, :reset_usage)
 
-  @doc "Кількість повідомлень у поточній історії та їх орієнтовний розмір."
+  @doc "Number of messages in the current history and their approximate size."
   def context_info(pid), do: GenServer.call(pid, :context_info)
 
   # --- Server Callbacks ---
@@ -488,17 +488,17 @@ defmodule Ella.Agent do
   @doc "Returns active tool names for the current mode (for testing)."
   def active_tools(pid), do: GenServer.call(pid, :active_tools)
 
-  @doc "Зберігає поточну сесію під заданим ім'ям."
+  @doc "Saves the current session under the given name."
   def save_session(pid, name \\ "default") do
     GenServer.call(pid, {:save_session, name})
   end
 
-  @doc "Завантажує сесію за ім'ям, відновлюючи історію та режим."
+  @doc "Loads a session by name, restoring history and mode."
   def load_session(pid, name \\ "default") do
     GenServer.call(pid, {:load_session, name})
   end
 
-  @doc "Список збережених сесій."
+  @doc "List of saved sessions."
   def list_sessions, do: Ella.Storage.list_sessions()
 
   @doc """

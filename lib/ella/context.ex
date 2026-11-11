@@ -1,51 +1,51 @@
 defmodule Ella.Context do
   @moduledoc """
-  Керування розміром історії повідомлень.
+  Manages the size of the message history.
 
-  Без цього `state.messages` ростиме безмежно: кожен виклик інструмента
-  додає повідомлення, і через кілька десятків кроків запит перевищить
-  контекстне вікно моделі — агент зупиниться з помилкою.
+  Without this, `state.messages` grows without bound: every tool call
+  adds messages, and after a few dozen steps the request exceeds the
+  model's context window — the agent stops with an error.
 
-  Схема проста: системний промпт і останні N повідомлень завжди
-  зберігаються. Старі tool-повідомлення, які вже не впливають на
-  наступні кроки, замінюються одним коротким підсумком.
+  The scheme is simple: the system prompt and the last N messages are
+  always kept. Older tool messages that no longer affect subsequent
+  steps are replaced with a single short summary.
   """
 
   alias Ella.Llm.Usage
 
-  # Скільки останніх повідомлень не стискати нізащо.
+  # How many of the most recent messages never to compact.
   @keep_recent 12
 
-  # Коефіцієнт «скільки токенів на одиницю нашої оцінки», визначений
-  # за реальними даними API: 1.0 — оцінка точна, 1.5 — промахнулися
-  # в півтора рази.
+  # Calibration "how many tokens per unit of our estimate", derived from
+  # real API data: 1.0 means the estimate is exact, 1.5 means we were
+  # off by half.
   @min_factor 0.5
   @max_factor 4.0
   @calibration_smoothing 0.3
 
   @doc """
-  Чи перевищує історія допустимий розмір.
+  Whether the history exceeds the allowed size.
   """
   def over_budget?(messages, opts) do
     estimate(messages, opts) > budget(opts)
   end
 
   @doc """
-  Коефіцієнт калібрування, який застосовується до оцінки.
+  Calibration factor applied to the estimate.
   """
   def factor(opts), do: Keyword.get(opts, :estimate_factor, 1.0)
 
   @doc """
-  Уточнює коефіцієнт оцінки за реальними токенами відповіді API.
+  Refines the estimate factor using real token counts from the API response.
 
-  Правило «4 символи = 1 токен» помиляється на десятки відсотків
-  залежно від мови та моделі. API повертає точний `prompt_tokens`
-  для того самого запиту — ідеальна точка для калібрування.
+  The "4 characters = 1 token" rule is off by tens of percent
+  depending on language and model. The API returns an exact
+  `prompt_tokens` for the same request — an ideal calibration point.
 
-  Коефіцієнт згладжується: один виняток (наприклад, запит із
-  незвичайним промптом) не повинен різко зміщувати всі наступні
-  оцінки. Значення затискаються в розумні межі, інакше один
-  збій usage міг би змусити агента стискати порожню історію.
+  The factor is smoothed: a single outlier (e.g. a request with an
+  unusual prompt) should not abruptly shift all subsequent estimates.
+  Values are clamped to sane bounds, otherwise one bad usage report
+  could force the agent to compact an empty history.
   """
   @spec calibrate(number(), non_neg_integer() | nil, keyword()) :: number()
   def calibrate(current_factor, prompt_tokens, opts \\ [])
@@ -69,13 +69,13 @@ defmodule Ella.Context do
   defp clamp_factor(value), do: value
 
   @doc """
-  Орієнтовний розмір історії в токенах.
+  Approximate size of the history in tokens.
 
-  Ми не знаємо точний токенайзер моделі, тому рахуємо символи й
-  ділимо на 4. Для рішення «стискати чи ні» цього достатньо.
+  We don't know the model's exact tokenizer, so we count characters
+  and divide by 4. For the decision "compact or not" this is enough.
 
-  З опцією `:estimate_factor` результат домножується на калібрувальний
-  коефіцієнт — див. `calibrate/3`.
+  With the `:estimate_factor` option the result is multiplied by the
+  calibration factor — see `calibrate/3`.
   """
   def estimate(messages, opts \\ []) when is_list(messages) do
     messages
@@ -140,17 +140,18 @@ defmodule Ella.Context do
   defp size_of(value), do: Usage.estimate(inspect(value))
 
   @doc """
-  Бюджет історії в токенах.
+  History budget in tokens.
   """
+
   def budget(opts) do
     Keyword.get(opts, :context_budget, Keyword.get(opts, :max_context_tokens, 120_000))
   end
 
   @doc """
-  Стискає історію, щоб вона вмістилась у бюджет.
+  Compacts the history so it fits the budget.
 
-  Повертає {:ok, messages} або {:error, reason}, якщо скоротити не
-  вдалося — наприклад, коли сама остання частина вже не вміщається.
+  Returns {:ok, messages} or {:error, reason} if compaction failed —
+  for example, when even the most recent part no longer fits.
   """
   def compact(messages, opts \\ []) do
     budget = budget(opts)
@@ -177,16 +178,15 @@ defmodule Ella.Context do
       if estimate(candidate, opts) <= budget do
         {:ok, candidate}
       else
-        # Підсумок зберігаємо в будь-якому разі: без нього агент
-        # втратить інформацію про те, що вже робив.
+        # Keep the summary in any case: without it the agent would lose
+        # information about what it already did.
         shrink_to_fit(system ++ [summary], recent, budget, opts)
       end
     end
   end
 
-  # Зменшує ліміт на довжину tool-результату, поки історія не
-  # вміститься. Обрізання поступове: не витрачаємо інформацію, доки
-  # це не потрібно.
+  # Reduces the tool-result length limit until the history fits.
+  # Trimming is gradual: don't drop information until necessary.
   @floor_chars 200
 
   defp shrink_to_fit(system, rest, budget, opts) do
@@ -203,8 +203,8 @@ defmodule Ella.Context do
         {:ok, candidate}
 
       max_chars <= @floor_chars ->
-        # Навіть максимально стиснувши tool-вивід, не вміщаємось:
-        # переходимо до відкидання найстаріших повідомлень.
+        # Even with tool output maximally trimmed, we still don't fit:
+        # fall back to dropping the oldest messages.
         drop_oldest(system, rest, budget, opts, max_chars)
 
       true ->
@@ -213,15 +213,14 @@ defmodule Ella.Context do
     end
   end
 
-  # Відкидаємо найстаріші повідомлення, доки не вмістимось. Хоча б
-  # одне повідомлення зберігаємо: без нього наступний запит не матиме
-  # жодного контексту.
+  # Drop the oldest messages until we fit. Keep at least one message:
+  # without it the next request would have no context at all.
   defp drop_oldest(system, rest, budget, opts, max_chars) do
     trimmed = trim_tool_content(rest, max_chars)
     total = length(trimmed)
 
-    # keep ∈ 1..total: скільки найсвіжіших повідомлень лишаємо.
-    # Нуль не допускаємо: порожня історія гірша за явну помилку.
+    # keep ∈ 1..total: how many of the most recent messages to keep.
+    # Zero is not allowed: an empty history is worse than an explicit error.
     Enum.reduce_while((total - 1)..1//-1, nil, fn keep, _acc ->
       recent = Enum.take(trimmed, -keep)
       candidate = system ++ recent
@@ -238,8 +237,9 @@ defmodule Ella.Context do
     Enum.split_with(messages, fn m -> get(m, "role") == "system" end)
   end
 
-  # Підсумок будується без виклику LLM: перелічуємо, що було зроблено.
-  # Це дешево, передбачувано і не витрачає токени на ще один запит.
+  # The summary is built without calling the LLM: we just enumerate what
+  # was done. This is cheap, predictable, and spends no tokens on an
+  # extra request.
   defp summarize(old, opts) do
     max_entries = Keyword.get(opts, :summary_max_entries, 40)
     max_chars = Keyword.get(opts, :summary_max_chars, 1_500)
@@ -256,8 +256,8 @@ defmodule Ella.Context do
         list -> Enum.join(list, "\n")
       end
 
-    # Підсумок сам стає system-повідомленням, його не обрізає
-    # trim_tool_content, тому обмежуємо його тут.
+    # The summary becomes a system message itself; trim_tool_content does
+    # not trim it, so we limit it here.
     if String.length(text) > max_chars do
       String.slice(text, 0, max_chars) <> "\n[summary truncated]"
     else
@@ -311,8 +311,8 @@ defmodule Ella.Context do
     }
   end
 
-  # Обрізає довгі tool-результати: вони займають найбільше місця
-  # і найменше впливають на наступні кроки.
+  # Trim long tool results: they take the most space and influence
+  # subsequent steps the least.
   defp trim_tool_content(messages, max_chars) do
     Enum.map(messages, fn message ->
       case get(message, "role") do

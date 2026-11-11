@@ -19,7 +19,7 @@ defmodule Ella.SubAgent do
     GenServer.call(pid, :execute, :infinity)
   end
 
-  # Повний набір інструментів за замовчуванням (включаючи редагування та запис)
+  # Full tool set by default (including editing and writing)
   def all_tools do
     [
       Ella.Tools.ReadFile,
@@ -33,15 +33,15 @@ defmodule Ella.SubAgent do
   end
 
   @doc """
-  Набір інструментів без права зміни стану.
+  Tool set without the right to change state.
 
-  Використовується, коли головний агент у plan mode делегує завдання:
-  інакше write_file/apply_patch всередині сабагента обійшли б read-only
-  режим, оскільки DelegateTask доступний у plan mode.
+  Used when the main agent in plan mode delegates a task: otherwise
+  write_file/apply_patch inside the subagent would bypass read-only
+  mode, since DelegateTask is available in plan mode.
 
-  SystemExec свідомо відсутній: він дозволяє змінити стан через шелл
-  (`> file`, `rm`), тому в plan mode недоступний ні головному агенту,
-  ні сабагенту. Пошук і читання лишаються доступними.
+  SystemExec is deliberately absent: it can change state via the shell
+  (`> file`, `rm`), so it is unavailable in plan mode to both the main
+  agent and the subagent. Search and reading remain available.
   """
   def read_only_tools do
     [
@@ -56,9 +56,9 @@ defmodule Ella.SubAgent do
 
   @impl true
   def init(opts) do
-    # Снапшот-сесія глобальна: головний агент її вже підняв, але
-    # сабагент може стартувати й окремо (тести, прямий виклик) —
-    # тоді WriteGuard не зможе записати резервну копію і заблокує запис.
+    # Snapshot session is global: the main agent already started it, but the
+    # subagent may start separately (tests, direct call) — then WriteGuard
+    # could not write a backup copy and would block the write.
     Snapshot.ensure_started()
 
     task = Keyword.fetch!(opts, :task)
@@ -86,7 +86,7 @@ defmodule Ella.SubAgent do
       llm_opts: Keyword.get(opts, :llm_opts, []),
       context_opts: Keyword.get(opts, :context_opts, context_opts_defaults()),
       usage: Usage.empty(),
-      # Сабагенти отримують вужчий контекст, тому ліміт ітерацій менший
+      # Subagents get a narrower context, so the iteration limit is smaller
       max_iterations: Keyword.get(opts, :max_iterations, 8)
     }
 
@@ -219,14 +219,14 @@ defmodule Ella.SubAgent do
   end
 
   defp streaming_opts(llm_opts) do
-    # Сабагентовий потік прихований — тільки фінальний підсумок.
+    # Subagent stream is hidden — only the final summary.
     Keyword.put(llm_opts, :on_text, fn _fragment ->
       :ok
     end)
   end
 
-  # Компактне підсумок аргументів виклику інструмента, щоб не виводити
-  # увесь JSON у консоль.
+  # Compact summary of tool-call arguments so the whole JSON isn't printed
+  # to the console.
   defp compact_args(_tool_name, args) when is_binary(args) do
     case Jason.decode(args) do
       {:ok, %{"path" => path} = _} ->

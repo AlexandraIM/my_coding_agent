@@ -1,16 +1,16 @@
 defmodule Ella.Approve do
   @moduledoc """
-  Запит дозволу на зміну захищеного файлу.
+  Asks permission to modify a protected file.
 
-  Два застереження, без яких механізм зламається:
+  Two caveats without which the mechanism breaks:
 
-  * **Неінтерактивний сеанс.** У CI або пайпі немає людини, яка
-    відповість. Запитати там — значить намертво зависнути, тому в
-    такому разі дозвіл одразу відхиляється.
+  * **Non-interactive session.** In CI or a pipe there is no human to
+    answer. Asking there means hanging forever, so permission is denied
+    immediately in that case.
 
-  * **Перенос рядка.** Під час стріму фрагменти друкуються через
-    `IO.write` без фінального переносу, і запит прилип би до
-    нерозривного тексту.
+  * **Newline.** During streaming, fragments are printed via `IO.write`
+    without a final newline, and the prompt would stick to the unbroken
+    text.
   """
 
   alias Ella.Config
@@ -18,7 +18,7 @@ defmodule Ella.Approve do
   @type answer :: :yes | :no | :unavailable
 
   @doc """
-  Чи можна ставити питання користувачеві.
+  Whether we can ask the user a question.
   """
   def interactive? do
     Application.get_env(:ella, :interactive, detect_interactive?())
@@ -40,9 +40,9 @@ defmodule Ella.Approve do
   end
 
   @doc """
-  Питає дозвіл на зміну `path` інструментом `tool`.
+  Asks permission to change `path` with tool `tool`.
 
-  Повертає :yes, :no або :unavailable (неінтерактивний сеанс).
+  Returns :yes, :no, or :unavailable (non-interactive session).
   """
   @spec ask(String.t(), String.t()) :: answer()
   def ask(tool_name, path) do
@@ -109,10 +109,10 @@ defmodule Ella.Approve do
   end
 
   @doc """
-  Повідомлення, яке повертається моделі після відмови.
+  Message returned to the model after a refusal.
 
-  Ключове — «do not retry»: інакше агент спробує той самий запис ще
-  раз і знову зупинить сесію.
+  The key is "do not retry": otherwise the agent would try the same
+  write again and stop the session once more.
   """
   @spec refusal(String.t()) :: String.t()
   def refusal(path) do
@@ -121,7 +121,7 @@ defmodule Ella.Approve do
   end
 
   @doc """
-  Повідомлення для неінтерактивного сеансу.
+  Message for a non-interactive session.
   """
   @spec unavailable(String.t()) :: String.t()
   def unavailable(path) do

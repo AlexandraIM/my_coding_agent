@@ -1,20 +1,21 @@
 defmodule Ella.Skills do
   @moduledoc """
-  Навички — додаткові інструкції для агента у форматі Markdown з
-  YAML-подібним frontmatter.
+  Skills — additional instructions for the agent in Markdown format with
+  YAML-like frontmatter.
 
-  ## Навіщо
+  ## Why
 
-  Проєкт може мати правила, які не випливають з коду: як писати тести,
-  який стиль дотримуватись, які команди безпечні. Тримати їх у системному
-  промпті постійно дорого — навіть якщо вони не потрібні для поточної
-  задачі.
+  A project may have rules that don't follow from the code: how to write
+  tests, which style to follow, which commands are safe. Keeping them in
+  the system prompt all the time is expensive — even when they aren't
+  needed for the current task.
 
-  Тому працюємо за принципом progressive disclosure: у промпт потрапляє
-  лише назва й короткий опис, а повний текст навички модель відкриває
-  інструментом `load_skill` лише тоді, коли він справді доречний.
+  So we work on the principle of progressive disclosure: only the name
+  and a short description make it into the prompt, and the full text of
+  a skill is opened by the model via the `load_skill` tool only when it
+  is truly relevant.
 
-  ## Формат файлу
+  ## File format
 
       ---
       name: Testing conventions
@@ -24,14 +25,14 @@ defmodule Ella.Skills do
       Run the suite with `mix test`.
       Always use ExUnit describe blocks.
 
-  Обов'язкове лише `description`: воно потрапляє в промпт. `name`
-  за замовчуванням береться з імені файлу. `tools` обмежує набір
-  інструментів, доступних поки навичка активна.
+  Only `description` is required: it goes into the prompt. `name`
+  defaults to the file name. `tools` restricts the set of tools
+  available while the skill is active.
 
-  ## Де шукати
+  ## Where to look
 
-  `~/.ella/skills/` — особисті навички, `~/.ella/skills/` у проєкті —
-  навички репозиторію. Проєктні перевизначають особисті за назвою.
+  `~/.ella/skills/` — personal skills, `.ella/skills/` in the project —
+  repository skills. Project skills override personal ones by name.
   """
 
   alias Ella.Sandbox
@@ -49,7 +50,7 @@ defmodule Ella.Skills do
   @extension ".md"
 
   @doc """
-  Завантажує всі навички. Проєктні мають пріоритет над особистими.
+  Loads all skills. Project skills take priority over personal ones.
   """
   @spec load_all() :: [t()]
   def load_all do
@@ -61,7 +62,7 @@ defmodule Ella.Skills do
     global = load_global(global_dir)
     project = load_dir(project_dir, :project)
 
-    # Порядок сохраняється: проєктні йдуть першими, глобальні доповнюють.
+    # Order is preserved: project skills come first, global ones supplement.
     (project ++ global)
     |> Enum.uniq_by(&normalise_name(&1.name))
   end
@@ -99,7 +100,7 @@ defmodule Ella.Skills do
   end
 
   @doc """
-  Записує базові навички в глобальну директорію, якщо їх там ще немає.
+  Writes the base skills into the global directory if they aren't there yet.
   """
   def seed_defaults do
     dir = Path.join(global_dir(), "skills")
@@ -181,7 +182,7 @@ defmodule Ella.Skills do
   end
 
   @doc """
-  Особиста директорія навичок.
+  Personal skills directory.
   """
   def global_dir do
     case Application.get_env(:ella, :global_skills_dir) do
@@ -191,14 +192,14 @@ defmodule Ella.Skills do
   end
 
   @doc """
-  Чи є навичка з таким ім'ям.
+  Whether a skill with this name exists.
   """
   def exists?(skills, name) do
     Enum.any?(skills, &(normalise_name(&1.name) == normalise_name(name)))
   end
 
   @doc """
-  Знаходить навичку за ім'ям або іменем файлу.
+  Finds a skill by name or file name.
   """
   @spec find([t()], String.t()) :: {:ok, t()} | {:error, String.t()}
   def find(skills, name) do
@@ -211,10 +212,10 @@ defmodule Ella.Skills do
   end
 
   @doc """
-  Каталог навичок для системного промпту: лише назва та опис.
+  Skill catalog for the system prompt: only name and description.
 
-  Повний текст не додається — інакше навички варті стільки ж
-  контексту, скільки й звичайний промпт.
+  The full text is not added — otherwise skills would cost as much
+  context as an ordinary prompt.
   """
   @spec catalog([t()]) :: String.t()
   def catalog([]), do: ""
@@ -236,7 +237,7 @@ defmodule Ella.Skills do
   end
 
   @doc """
-  Текст навички, який повертає інструмент `load_skill`.
+  Skill text returned by the `load_skill` tool.
   """
   @spec render(t()) :: String.t()
   def render(skill) do
@@ -257,7 +258,7 @@ defmodule Ella.Skills do
   end
 
   @doc """
-  Чи дозволяє навичка інструмент з такою назвою.
+  Whether the skill allows a tool with this name.
   """
   @spec allows?(t() | nil, String.t()) :: boolean()
   def allows?(nil, _tool_name), do: true
@@ -267,7 +268,7 @@ defmodule Ella.Skills do
     tool_name in tools
   end
 
-  # --- Завантаження ---
+  # --- Loading ---
 
   defp load_dir(dir, source) do
     case File.ls(dir) do
@@ -290,7 +291,7 @@ defmodule Ella.Skills do
             [%{skill | scope: scope, name: skill.name || default_name(path)}]
 
           {:error, reason} ->
-            # Одна бита навичка не повинна ламати весь агент.
+            # One broken skill must not break the whole agent.
             Ella.Output.puts(
               Ella.Output.tag("[skills] skipping #{Path.basename(path)}: #{reason}", :yellow)
             )
@@ -310,10 +311,10 @@ defmodule Ella.Skills do
   end
 
   @doc """
-  Розбирає Markdown з frontmatter.
+  Parses Markdown with frontmatter.
 
-  Повертає {:ok, skill} або {:error, reason}. `name` буде nil, якщо
-  його немає у frontmatter — тоді викликач підставить ім'я файлу.
+  Returns {:ok, skill} or {:error, reason}. `name` will be nil if it is
+  absent from the frontmatter — then the caller substitutes the file name.
   """
   @spec parse(String.t()) :: {:ok, t()} | {:error, String.t()}
   def parse(content) when is_binary(content) do
@@ -349,9 +350,9 @@ defmodule Ella.Skills do
 
   defp split_frontmatter(_), do: :none
 
-  # Мінімальний YAML-підмножина: key: value та списки у вигляді
-  # key: [a, b] або key:\n  - a. Повний YAML тут непотрібний і коштував
-  # б зайву залежність.
+  # Minimal YAML subset: key: value and lists as key: [a, b] or key:
+  #   - a. Full YAML is unnecessary here and would cost an extra
+  # dependency.
   defp parse_frontmatter(frontmatter) do
     {fields, _last_key} =
       frontmatter
@@ -367,7 +368,7 @@ defmodule Ella.Skills do
         {fields, last_key}
 
       match = Regex.run(~r/^\s*-\s+(.+)$/, line) ->
-        # Regex.run повертає плоский список [full_match | captures].
+        # Regex.run returns a flat list [full_match | captures].
         [_, item] = match
         {append_to_list(fields, last_key, item), last_key}
 
@@ -384,8 +385,8 @@ defmodule Ella.Skills do
     value = String.trim(raw)
 
     cond do
-      # Порожнє значення — або ключ без значення, або початок списку
-      # у наступних рядках. Не відкидаємо попередні значення.
+      # Empty value — either a key without a value or the start of a list
+      # on following lines. Don't discard previous values.
       value == "" ->
         Map.put_new_lazy(fields, key, fn -> [] end)
 
